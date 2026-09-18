@@ -71,6 +71,23 @@ public final class CommandRouter {
         return null;
     }
 
+    public static final class SmsRequest{
+        public final String target;
+        public final String message;
+        SmsRequest(String t,String m){target=t;message=m;}
+    }
+
+    public static SmsRequest parseSms(String s){
+        String n=normalize(s);
+        Matcher m=Pattern.compile("^(?:sms|send sms|text|message)\\s+(.+?)\\s+(?:ko|to)\\s+(.+)$").matcher(n);
+        if(m.find()) return new SmsRequest(m.group(2).trim(),m.group(1).trim());
+
+        m=Pattern.compile("^(.+?)\\s+ko\\s+(?:sms|message|text)\\s+(.+)$").matcher(n);
+        if(m.find()) return new SmsRequest(m.group(1).trim(),m.group(2).trim());
+
+        return null;
+    }
+
     public static final class WhatsAppRequest{
         public final String contact;
         public final String message;
