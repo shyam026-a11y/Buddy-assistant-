@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.*;
 import android.app.SearchManager;
 import android.content.*;
+import android.database.Cursor;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
@@ -31,10 +32,10 @@ import java.util.concurrent.*;
 public class MainActivity extends Activity {
  private static final String PREF="buddy_prefs", KEY="openrouter_key";
  private SharedPreferences prefs; private SpeechRecognizer sr; private TextToSpeech tts;
- private boolean ttsReady,listening,handsFree; private String lang="en-IN";
+ private boolean ttsReady,listening,handsFree,speaking,suppressRecognizerCallbacks; private String lang="en-IN";
  private enum ListenMode { OFF, COMMAND, WAKE }
  private ListenMode listenMode=ListenMode.OFF;
- private String pendingWaContact="", pendingWaMessage="", pendingCallTarget="";
+ private String pendingWaContact="", pendingWaMessage="", pendingCallTarget="", pendingSmsNumber="", pendingSmsText="";
  private final ExecutorService net=Executors.newSingleThreadExecutor();
  private TextView state,user,buddy,accessLabel; private Button mic,langBtn;
  private final int BG=Color.rgb(11,16,32),CARD=Color.rgb(23,28,51),CARD2=Color.rgb(31,37,65),WHITE=Color.WHITE,MUTED=Color.rgb(165,172,201),ACCENT=Color.rgb(124,92,255),CYAN=Color.rgb(93,208,255);
@@ -60,7 +61,7 @@ public class MainActivity extends Activity {
   LinearLayout head=new LinearLayout(this);head.setGravity(Gravity.CENTER_VERTICAL);
   ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.buddy_logo);head.addView(logo,new LinearLayout.LayoutParams(dp(58),dp(58)));
   LinearLayout nm=new LinearLayout(this);nm.setOrientation(LinearLayout.VERTICAL);nm.setPadding(dp(12),0,0,0);nm.addView(txt("BUDDY",24,WHITE,true));nm.addView(txt("Fast • Private • Your assistant",13,MUTED,false));head.addView(nm,new LinearLayout.LayoutParams(0,-2,1));
-  langBtn=btn("EN",46,CARD2,13);langBtn.setOnClickListener(v->{lang=lang.equals("en-IN")?"hi-IN":"en-IN";langBtn.setText(lang.equals("en-IN")?"EN":"HI");});head.addView(langBtn);c.addView(head);gap(c,14);
+  langBtn=btn("EN",46,CARD2,13);langBtn.setOnClickListener(v->{lang=lang.equals("en-IN")?"hi-IN":"en-IN";langBtn.setText(lang.equals("en-IN")?"EN":"HI");if(ttsReady)try{tts.setLanguage(Locale.forLanguageTag(lang));}catch(Exception ignored){}});head.addView(langBtn);c.addView(head);gap(c,14);
 
   state=txt("● Ready",13,CYAN,true);LinearLayout sb=new LinearLayout(this);sb.setPadding(dp(14),dp(10),dp(14),dp(10));sb.setBackground(bg(CARD,12));sb.addView(state);c.addView(sb);gap(c,12);
   LinearLayout convo=new LinearLayout(this);convo.setOrientation(LinearLayout.VERTICAL);convo.setPadding(dp(16),dp(16),dp(16),dp(16));convo.setBackground(bg(CARD,22));
@@ -87,6 +88,7 @@ public class MainActivity extends Activity {
   tts=new TextToSpeech(this,x->{
    if(x==TextToSpeech.SUCCESS){
     ttsReady=true;
+    try{tts.setLanguage(Locale.forLanguageTag(lang));}catch(Exception ignored){}
     tts.setSpeechRate(1.08f);
     tts.setPitch(1.08f);
     tts.setOnUtteranceProgressListener(new UtteranceProgressListener(){
@@ -115,6 +117,7 @@ public class MainActivity extends Activity {
    public void onBufferReceived(byte[] b){}
    public void onEndOfSpeech(){}
    public void onError(int e){
+    if(suppressRecognizerCallbacks)return;
     listening=false;
     mic.setText("🎙  TAP TO TALK");
     if(handsFree && listenMode==ListenMode.WAKE){
@@ -125,6 +128,7 @@ public class MainActivity extends Activity {
     }
    }
    public void onResults(Bundle b){
+    if(suppressRecognizerCallbacks)return;
     listening=false;
     ArrayList<String> a=b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
     if(listenMode==ListenMode.WAKE){
@@ -176,7 +180,7 @@ public class MainActivity extends Activity {
  }
 
  private void listenForWakeWord(){
-  if(!handsFree)return;
+  if(!handsFree||speaking)return;
   stopTts();
   if(Build.VERSION.SDK_INT>=23&&checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){
    requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},7);
@@ -190,22 +194,27 @@ public class MainActivity extends Activity {
   i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,lang);
   i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS,5);
   i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS,false);
+  i.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE,true);
   try{sr.startListening(i);}catch(Exception e){listening=false;mic.postDelayed(MainActivity.this::listenForWakeWord,500);}
  }
 
  private void stopListening(){
   if(sr!=null){
+   suppressRecognizerCallbacks=true;
    try{sr.cancel();}catch(Exception ignored){}
+   mic.postDelayed(()->suppressRecognizerCallbacks=false,350);
   }
   listening=false;
   mic.setText("🎙  TAP TO TALK");
  }
 
  private void stopTts(){
+  speaking=false;
   if(tts!=null)try{tts.stop();}catch(Exception ignored){}
  }
 
  private void resumeWakeAfterSpeech(){
+  speaking=false;
   if(handsFree && listenMode!=ListenMode.COMMAND && !isFinishing()){
    listenMode=ListenMode.WAKE;
    listenForWakeWord();
@@ -307,9 +316,55 @@ public class MainActivity extends Activity {
    }catch(Exception ignored){reply("Call start nahi hua.");}
   }
  }
- private void sendSmsFlow(String s){final EditText e=new EditText(this);e.setText(s);e.setHint("message text");new AlertDialog.Builder(this).setTitle("Send SMS").setMessage("Number manually enter karo. Buddy bina confirmation ke SMS nahi bhejega.").setView(e).setNegativeButton("Cancel",null).setPositiveButton("Continue",(d,w)->{final EditText n=new EditText(this);n.setHint("phone number");new AlertDialog.Builder(this).setTitle("Recipient").setView(n).setNegativeButton("Cancel",null).setPositiveButton("Send",(d2,w2)->sendSms(n.getText().toString(),e.getText().toString())).show();}).show();}
- private void sendSms(String n,String msg){try{if(Build.VERSION.SDK_INT>=23&&checkSelfPermission(Manifest.permission.SEND_SMS)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.SEND_SMS},8);return;}SmsManager.getDefault().sendTextMessage(n,null,msg,null,null);reply("SMS send kar diya.");}catch(Exception e){reply("SMS send nahi hua.");}}
- private void toggleFlash(){try{android.hardware.camera2.CameraManager cm=(android.hardware.camera2.CameraManager)getSystemService(CAMERA_SERVICE);String id=cm.getCameraIdList()[0];Boolean now=getPreferences(0).getBoolean("flash",false);cm.setTorchMode(id,!now);getPreferences(0).edit().putBoolean("flash",!now).apply();reply(!now?"Torch on.":"Torch off.");}catch(Exception e){reply("Torch control available nahi hai.");}}
+ private void sendSmsFlow(String s){
+  final EditText e=new EditText(this);
+  e.setText(s);
+  e.setHint("message text");
+  new AlertDialog.Builder(this).setTitle("Send SMS")
+   .setMessage("Number manually enter karo. Buddy bina confirmation ke SMS nahi bhejega.")
+   .setView(e).setNegativeButton("Cancel",null)
+   .setPositiveButton("Continue",(d,w)->{
+    final EditText n=new EditText(this);
+    n.setHint("phone number");
+    new AlertDialog.Builder(this).setTitle("Recipient").setView(n)
+     .setNegativeButton("Cancel",null)
+     .setPositiveButton("Send",(d2,w2)->sendSms(n.getText().toString(),e.getText().toString())).show();
+   }).show();
+ }
+
+ private void sendSms(String n,String msg){
+  String number=n==null?"":n.replaceAll("[^0-9+]","");
+  String text=msg==null?"":msg.trim();
+  if(number.isEmpty()){reply("Valid phone number nahi mila.");return;}
+  if(text.isEmpty()){reply("Message empty hai.");return;}
+  if(Build.VERSION.SDK_INT>=23&&checkSelfPermission(Manifest.permission.SEND_SMS)!=PackageManager.PERMISSION_GRANTED){
+   pendingSmsNumber=number; pendingSmsText=text;
+   requestPermissions(new String[]{Manifest.permission.SEND_SMS},8);
+   reply("SMS permission allow kar do.");
+   return;
+  }
+  try{
+   SmsManager.getDefault().sendTextMessage(number,null,text,null,null);
+   reply("SMS request send kar di.");
+  }catch(Exception e){reply("SMS send nahi hua.");}
+ }
+ private void toggleFlash(){
+  try{
+   android.hardware.camera2.CameraManager cm=(android.hardware.camera2.CameraManager)getSystemService(CAMERA_SERVICE);
+   String id=null;
+   for(String cameraId:cm.getCameraIdList()){
+    android.hardware.camera2.CameraCharacteristics ch=cm.getCameraCharacteristics(cameraId);
+    Boolean back=ch.get(android.hardware.camera2.CameraCharacteristics.LENS_FACING)==android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK;
+    Boolean flash=ch.get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE);
+    if(Boolean.TRUE.equals(back)&&Boolean.TRUE.equals(flash)){id=cameraId;break;}
+   }
+   if(id==null)throw new IllegalStateException();
+   boolean now=getPreferences(0).getBoolean("flash",false);
+   cm.setTorchMode(id,!now);
+   getPreferences(0).edit().putBoolean("flash",!now).apply();
+   reply(!now?"Torch on.":"Torch off.");
+  }catch(Exception e){reply("Torch control available nahi hai.");}
+ }
  private String search(String s){return CommandRouter.googleSearchQuery(s);}
  private void exec(String msg,Runnable r){try{r.run();reply(msg);}catch(Exception e){reply("Phone ne ye action allow nahi kiya.");}}
  private void ok(String msg,Runnable r){try{r.run();reply(msg+" done.");}catch(Exception e){reply(msg+" nahi hua.");}}
@@ -320,19 +375,25 @@ public class MainActivity extends Activity {
    if(handsFree) listenMode=ListenMode.WAKE; else listenMode=ListenMode.OFF;
    setState(handsFree?"● Waiting for “Hey Buddy”…":"● Ready",CYAN);
    if(ttsReady){
+    speaking=true;
     try{tts.speak(s,TextToSpeech.QUEUE_FLUSH,null,"buddy-"+System.nanoTime());}
-    catch(Exception ignored){resumeWakeAfterSpeech();}
+    catch(Exception ignored){speaking=false;resumeWakeAfterSpeech();}
    } else resumeWakeAfterSpeech();
   });
  }
  private void youtubeSearch(String q){
-  Intent i=new Intent(Intent.ACTION_SEARCH);
-  i.setPackage("com.google.android.youtube");
-  i.putExtra(SearchManager.QUERY,q);
-  try{startActivity(i);}
-  catch(Exception e){web(q);}
+  String query=q==null?"":q.trim();
+  if(query.isEmpty()){openApp("youtube");return;}
+  String url="https://www.youtube.com/results?search_query="+Uri.encode(query);
+  try{
+   Intent i=new Intent(Intent.ACTION_VIEW,Uri.parse(url));
+   i.setPackage("com.google.android.youtube");
+   startActivity(i);
+  }catch(Exception e){
+   try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));}
+   catch(Exception ignored){reply("YouTube search open nahi hua.");}
+  }
  }
-
  private void sendWhatsAppFlow(String contact,String message){
   pendingWaContact=contact;
   pendingWaMessage=message;
@@ -346,25 +407,28 @@ public class MainActivity extends Activity {
 
  private void openWhatsAppForContact(String contact,String message){
   String number=findContactNumber(contact);
-  if(number==null){
+  if(number==null||number.isEmpty()){
    new AlertDialog.Builder(this)
     .setTitle("WhatsApp message")
-    .setMessage("Contact “"+contact+"” nahi mila. WhatsApp ko message ke saath open karun?")
+    .setMessage("Contact “"+contact+"” nahi mila.")
     .setNegativeButton("Cancel",null)
-    .setPositiveButton("Open WhatsApp",(d,w)->shareWhatsApp(message))
+    .setPositiveButton("Open WhatsApp",(d,w)->openApp("whatsapp"))
     .show();
    return;
   }
-  String url="https://wa.me/"+formatWhatsAppNumber(number)+"?text="+Uri.encode(message);
+  String phone=formatWhatsAppNumber(number);
+  String text=message==null?"":message.trim();
+  String url="whatsapp://send?phone="+phone+"&text="+Uri.encode(text);
   try{
    Intent i=new Intent(Intent.ACTION_VIEW,Uri.parse(url));
+   i.setPackage("com.whatsapp");
    startActivity(i);
-   reply("Message ready hai. WhatsApp me Send tap kar dena.");
+   reply("WhatsApp chat ready hai. Send tap kar dena.");
   }catch(Exception e){
-   shareWhatsApp(message);
+   try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://wa.me/"+phone+"?text="+Uri.encode(text))));reply("WhatsApp chat ready hai. Send tap kar dena.");}
+   catch(Exception ignored){reply("WhatsApp open nahi hua.");}
   }
  }
-
  private String findContactNumber(String wanted){
   Cursor c=null;
   try{
@@ -463,7 +527,15 @@ public class MainActivity extends Activity {
  @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){
   super.onRequestPermissionsResult(requestCode,permissions,grantResults);
   boolean granted=grantResults.length>0&&grantResults[0]==PackageManager.PERMISSION_GRANTED;
-  if(requestCode==9){
+  if(requestCode==7){
+   if(granted){if(handsFree)listenForWakeWord();else listen();}
+   else reply("Microphone permission deny hua.");
+  }else if(requestCode==8){
+   if(granted&&!pendingSmsNumber.isEmpty()&&!pendingSmsText.isEmpty()){
+    String n=pendingSmsNumber,m=pendingSmsText; pendingSmsNumber="";pendingSmsText="";
+    sendSms(n,m);
+   }else if(!granted)reply("SMS permission deny hua.");
+  }else if(requestCode==9){
    if(granted) openWhatsAppForContact(pendingWaContact,pendingWaMessage);
    else reply("Contacts permission deny hua.");
   }else if(requestCode==10){
@@ -483,8 +555,6 @@ public class MainActivity extends Activity {
     }else reply("Contact nahi mila.");
    }else reply("Contacts permission deny hua.");
    pendingCallTarget="";
-  }else if(requestCode==7&&granted){
-   if(handsFree)listenForWakeWord(); else listen();
   }
  }
 
