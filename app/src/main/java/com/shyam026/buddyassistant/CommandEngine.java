@@ -86,7 +86,7 @@ public final class CommandEngine {
             if(has(s,"all apps","app drawer")){global(c,"all_apps",callback);return;}
 
             if(has(s,"scroll down","neeche scroll","scroll neeche")){boolean r=accessScroll(c,true);done(c,callback,r?"Neeche scroll kar diya.":"Scroll nahi ho paya.");return;}
-            if(has(s,"scroll up","upar scroll","scroll upar")){bool r=accessScroll(c,false);done(c,callback,r?"Upar scroll kar diya.":"Scroll nahi ho paya.");return;}
+            if(has(s,"scroll up","upar scroll","scroll upar")){boolean r=accessScroll(c,false);done(c,callback,r?"Upar scroll kar diya.":"Scroll nahi ho paya.");return;}
 
             String tap=after(s,"tap ","click ");
             if(tap!=null&&!tap.isEmpty()){
