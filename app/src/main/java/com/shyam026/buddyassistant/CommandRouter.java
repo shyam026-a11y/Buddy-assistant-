@@ -28,6 +28,30 @@ public final class CommandRouter {
         return n;
     }
 
+    public static final class CallRequest{
+        public final String target;
+        CallRequest(String t){target=t;}
+    }
+
+    public static CallRequest parseCall(String s){
+        String n=normalize(s);
+        String[] p={
+            "call ","call karo ","phone ","phone karo ","dial ","dial karo ",
+            "ko call karo","ko phone karo"
+        };
+        for(String x:p){
+            int idx=n.indexOf(x);
+            if(idx>=0){
+                String t;
+                if(x.startsWith("ko ")) t=n.substring(0,idx).trim();
+                else t=n.substring(idx+x.length()).trim();
+                if(t.endsWith("ko")) t=t.substring(0,t.length()-2).trim();
+                if(!t.isEmpty()) return new CallRequest(t);
+            }
+        }
+        return null;
+    }
+
     public static Integer extractNumber(String s){
         if(s==null)return null;
         Matcher m=Pattern.compile("\\b(\\d{1,3})\\b").matcher(s);
