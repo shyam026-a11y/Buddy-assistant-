@@ -8,6 +8,7 @@ import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import android.media.*;
+import android.view.KeyEvent;
 import android.net.Uri;
 import android.os.*;
 import android.provider.ContactsContract;
@@ -84,7 +85,7 @@ public final class CommandEngine {
             if(has(s,"power menu","power button menu")){global(c,"power",callback);return;}
             if(has(s,"all apps","app drawer")){global(c,"all_apps",callback);return;}
 
-            if(has(s,"scroll down","neeche scroll","scroll neeche")){bool r=accessScroll(c,true);done(c,callback,r?"Neeche scroll kar diya.":"Scroll nahi ho paya.");return;}
+            if(has(s,"scroll down","neeche scroll","scroll neeche")){boolean r=accessScroll(c,true);done(c,callback,r?"Neeche scroll kar diya.":"Scroll nahi ho paya.");return;}
             if(has(s,"scroll up","upar scroll","scroll upar")){bool r=accessScroll(c,false);done(c,callback,r?"Upar scroll kar diya.":"Scroll nahi ho paya.");return;}
 
             String tap=after(s,"tap ","click ");
