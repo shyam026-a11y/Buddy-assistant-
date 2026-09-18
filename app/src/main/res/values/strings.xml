@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Buddy</string>
+    <string name="buddy_accessibility_desc">Buddy uses accessibility only after you enable it to perform requested navigation, back/home, scrolling, tapping and text-entry actions.</string>
+</resources>
