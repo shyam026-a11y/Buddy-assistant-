@@ -200,9 +200,7 @@ public class MainActivity extends Activity {
   tts=new TextToSpeech(this,x->{
    if(x==TextToSpeech.SUCCESS){
     ttsReady=true;
-    try{tts.setLanguage(Locale.forLanguageTag(lang));}catch(Exception ignored){}
-    tts.setSpeechRate(1.08f);
-    tts.setPitch(1.08f);
+    BuddyVoiceProfile.apply(tts,Locale.forLanguageTag(lang));
     tts.setOnUtteranceProgressListener(new UtteranceProgressListener(){
      @Override public void onStart(String id){}
      @Override public void onDone(String id){runOnUiThread(MainActivity.this::resumeWakeAfterSpeech);}
