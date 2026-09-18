@@ -12,6 +12,10 @@ android {
         versionName "2.1-MVP"
     }
 
+    testOptions { unitTests.returnDefaultValues = true }
+
+    testImplementation "junit:junit:4.13.2"
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
