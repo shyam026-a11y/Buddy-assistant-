@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+  pull_request:
 
 env:
   ANDROID_HOME: /usr/local/lib/android/sdk
