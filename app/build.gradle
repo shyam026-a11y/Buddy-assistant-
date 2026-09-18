@@ -8,8 +8,8 @@ android {
         applicationId "com.shyam026.buddyassistant"
         minSdk 23
         targetSdk 35
-        versionCode 3
-        versionName "2.1-MVP"
+        versionCode 4
+        versionName "2.2-StableVoice"
     }
 
     testOptions { unitTests.returnDefaultValues = true }
