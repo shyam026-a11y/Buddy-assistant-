@@ -40,10 +40,12 @@ public class MainActivity extends Activity {
  private TextView state,user,buddy,accessLabel; private Button mic,langBtn;
  private final int BG=Color.rgb(11,16,32),CARD=Color.rgb(23,28,51),CARD2=Color.rgb(31,37,65),WHITE=Color.WHITE,MUTED=Color.rgb(165,172,201),ACCENT=Color.rgb(124,92,255),CYAN=Color.rgb(93,208,255);
  private final Map<String,String> apps=new LinkedHashMap<>();
+ private final Handler mainHandler=new Handler(Looper.getMainLooper());
+ private final Runnable wakeRetry=()->{if(handsFree&&listenMode==ListenMode.WAKE&&!listening&&!isFinishing())listenForWakeWord();};
 
  @Override public void onCreate(Bundle b){
   super.onCreate(b); prefs=getSharedPreferences(PREF,0);
-  String[][] a={{"youtube","com.google.android.youtube"},{"chrome","com.android.chrome"},{"whatsapp","com.whatsapp"},{"instagram","com.instagram.android"},{"spotify","com.spotify.music"},{"telegram","org.telegram.messenger"},{"maps","com.google.android.apps.maps"},{"gmail","com.google.android.gm"}};
+  String[][] a={{"youtube","com.google.android.youtube"},{"chrome","com.android.chrome"},{"whatsapp","com.whatsapp"},{"instagram","com.instagram.android"},{"spotify","com.spotify.music"},{"telegram","org.telegram.messenger"},{"maps","com.google.android.apps.maps"},{"gmail","com.google.android.gm"},{"calculator","com.google.android.calculator"}};
   for(String[] x:a)apps.put(x[0],x[1]);
   initTts(); buildUi();
  }
@@ -55,32 +57,142 @@ public class MainActivity extends Activity {
  private void gap(LinearLayout p,int h){View v=new View(this);p.addView(v,new LinearLayout.LayoutParams(1,dp(h)));}
 
  private void buildUi(){
-  LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(BG);
-  ScrollView sc=new ScrollView(this);LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);c.setPadding(dp(20),dp(18),dp(20),dp(24));sc.addView(c);root.addView(sc,new LinearLayout.LayoutParams(-1,0,1));
+  LinearLayout root=new LinearLayout(this);
+  root.setOrientation(LinearLayout.VERTICAL);
+  root.setBackgroundColor(BG);
 
-  LinearLayout head=new LinearLayout(this);head.setGravity(Gravity.CENTER_VERTICAL);
-  ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.buddy_logo);head.addView(logo,new LinearLayout.LayoutParams(dp(58),dp(58)));
-  LinearLayout nm=new LinearLayout(this);nm.setOrientation(LinearLayout.VERTICAL);nm.setPadding(dp(12),0,0,0);nm.addView(txt("BUDDY",24,WHITE,true));nm.addView(txt("Fast • Private • Your assistant",13,MUTED,false));head.addView(nm,new LinearLayout.LayoutParams(0,-2,1));
-  langBtn=btn("EN",46,CARD2,13);langBtn.setOnClickListener(v->{lang=lang.equals("en-IN")?"hi-IN":"en-IN";langBtn.setText(lang.equals("en-IN")?"EN":"HI");if(ttsReady)try{tts.setLanguage(Locale.forLanguageTag(lang));}catch(Exception ignored){}});head.addView(langBtn);c.addView(head);gap(c,14);
+  ScrollView sc=new ScrollView(this);
+  sc.setFillViewport(true);
+  LinearLayout c=new LinearLayout(this);
+  c.setOrientation(LinearLayout.VERTICAL);
+  c.setPadding(dp(18),dp(18),dp(18),dp(28));
+  sc.addView(c);
+  root.addView(sc,new LinearLayout.LayoutParams(-1,0,1));
 
-  state=txt("● Ready",13,CYAN,true);LinearLayout sb=new LinearLayout(this);sb.setPadding(dp(14),dp(10),dp(14),dp(10));sb.setBackground(bg(CARD,12));sb.addView(state);c.addView(sb);gap(c,12);
-  LinearLayout convo=new LinearLayout(this);convo.setOrientation(LinearLayout.VERTICAL);convo.setPadding(dp(16),dp(16),dp(16),dp(16));convo.setBackground(bg(CARD,22));
-  convo.addView(txt("YOU",11,MUTED,true));user=txt("Say something…",18,WHITE,false);user.setPadding(0,dp(5),0,dp(14));convo.addView(user);
-  convo.addView(txt("BUDDY",11,MUTED,true));buddy=txt("Ready hoon. Bolo.",18,WHITE,false);convo.addView(buddy);c.addView(convo);gap(c,14);
+  LinearLayout head=new LinearLayout(this);
+  head.setGravity(Gravity.CENTER_VERTICAL);
+  ImageView logo=new ImageView(this);
+  logo.setImageResource(R.drawable.buddy_logo);
+  head.addView(logo,new LinearLayout.LayoutParams(dp(62),dp(62)));
 
-  mic=btn("🎙  TAP TO TALK",58,ACCENT,15);LinearLayout mr=new LinearLayout(this);mr.setGravity(Gravity.CENTER);mr.addView(mic,new LinearLayout.LayoutParams(dp(240),dp(58)));c.addView(mr);mic.setOnClickListener(v->listen());gap(c,14);
-  c.addView(txt("QUICK COMMANDS",11,MUTED,true));LinearLayout chips=new LinearLayout(this);
-  chip(chips,"YouTube","YouTube kholo");chip(chips,"Volume +","volume badhao");chip(chips,"Brightness","brightness 60");chip(chips,"Back","back jao");c.addView(chips);gap(c,12);
+  LinearLayout nm=new LinearLayout(this);
+  nm.setOrientation(LinearLayout.VERTICAL);
+  nm.setPadding(dp(12),0,0,0);
+  nm.addView(txt("BUDDY",24,WHITE,true));
+  nm.addView(txt("Voice-first phone assistant",13,MUTED,false));
+  head.addView(nm,new LinearLayout.LayoutParams(0,-2,1));
 
-  LinearLayout access=new LinearLayout(this);access.setOrientation(LinearLayout.VERTICAL);access.setPadding(dp(14),dp(12),dp(14),dp(12));access.setBackground(bg(CARD,16));
-  access.addView(txt("DEVICE CONTROL",11,MUTED,true));accessLabel=txt(accessText(),14,WHITE,false);access.addView(accessLabel);Button ae=btn("Enable phone control",44,CARD2,13);ae.setOnClickListener(v->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));access.addView(ae);c.addView(access);gap(c,12);
+  langBtn=btn("EN",44,CARD2,13);
+  langBtn.setPadding(dp(14),0,dp(14),0);
+  langBtn.setOnClickListener(v->{
+   lang=lang.equals("en-IN")?"hi-IN":"en-IN";
+   langBtn.setText(lang.equals("en-IN")?"EN":"HI");
+   if(ttsReady)try{tts.setLanguage(Locale.forLanguageTag(lang));}catch(Exception ignored){}
+  });
+  head.addView(langBtn);
+  c.addView(head);
+  gap(c,14);
 
-  LinearLayout opts=new LinearLayout(this);Switch sw=new Switch(this);sw.setText("Hey Buddy wake mode (app open)");sw.setTextColor(WHITE);sw.setTextSize(14);sw.setOnCheckedChangeListener((v,x)->{handsFree=x;if(x){stopTts();listenForWakeWord();}else{listenMode=ListenMode.OFF;stopListening();setState("● Ready",CYAN);}});opts.addView(sw,new LinearLayout.LayoutParams(0,-2,1));
-  Button set=btn("Settings",46,CARD2,14);set.setOnClickListener(v->settings());opts.addView(set);c.addView(opts);gap(c,12);
-  TextView foot=txt("Local first • AI fallback • Wake mode listens only for “Hey Buddy”",12,MUTED,false);foot.setGravity(Gravity.CENTER);c.addView(foot);
-  setContentView(root);initSpeech();
+  LinearLayout hero=new LinearLayout(this);
+  hero.setOrientation(LinearLayout.VERTICAL);
+  hero.setPadding(dp(16),dp(16),dp(16),dp(16));
+  hero.setBackground(bg(CARD,22));
+  TextView title=txt("ASSISTANT STATUS",11,MUTED,true);
+  hero.addView(title);
+  state=txt("● Ready",14,CYAN,true);
+  state.setPadding(0,dp(7),0,dp(10));
+  hero.addView(state);
+  user=txt("Say something…",17,WHITE,false);
+  hero.addView(user);
+  buddy=txt("Ready hoon. Bolo.",17,WHITE,true);
+  buddy.setPadding(0,dp(7),0,0);
+  hero.addView(buddy);
+  c.addView(hero);
+  gap(c,14);
+
+  mic=btn("🎙  TAP TO TALK",62,ACCENT,16);
+  LinearLayout mr=new LinearLayout(this);
+  mr.setGravity(Gravity.CENTER);
+  mr.addView(mic,new LinearLayout.LayoutParams(-1,dp(62)));
+  c.addView(mr);
+  mic.setOnClickListener(v->listen());
+  gap(c,16);
+
+  c.addView(txt("QUICK ACTIONS",11,MUTED,true));
+  gap(c,6);
+  LinearLayout row1=new LinearLayout(this);
+  row1.setOrientation(LinearLayout.HORIZONTAL);
+  chip(row1,"YouTube","YouTube kholo");
+  chip(row1,"Volume +","volume badhao");
+  c.addView(row1);
+  gap(c,6);
+  LinearLayout row2=new LinearLayout(this);
+  row2.setOrientation(LinearLayout.HORIZONTAL);
+  chip(row2,"Brightness","brightness 60");
+  chip(row2,"Back","back jao");
+  c.addView(row2);
+  gap(c,14);
+
+  LinearLayout commands=new LinearLayout(this);
+  commands.setOrientation(LinearLayout.VERTICAL);
+  commands.setPadding(dp(16),dp(14),dp(16),dp(14));
+  commands.setBackground(bg(CARD,18));
+  commands.addView(txt("TRY SAYING",11,MUTED,true));
+  commands.addView(txt("• “YouTube kholo”
+• “volume 60”
+• “brightness 40”
+• “search JEE physics”",14,WHITE,false));
+  c.addView(commands);
+  gap(c,14);
+
+  LinearLayout access=new LinearLayout(this);
+  access.setOrientation(LinearLayout.VERTICAL);
+  access.setPadding(dp(16),dp(14),dp(16),dp(14));
+  access.setBackground(bg(CARD,18));
+  access.addView(txt("PHONE CONTROL",11,MUTED,true));
+  accessLabel=txt(accessText(),14,WHITE,false);
+  accessLabel.setPadding(0,dp(6),0,dp(10));
+  access.addView(accessLabel);
+  Button ae=btn("Enable phone control",44,CARD2,13);
+  ae.setOnClickListener(v->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+  access.addView(ae);
+  c.addView(access);
+  gap(c,12);
+
+  LinearLayout opts=new LinearLayout(this);
+  opts.setGravity(Gravity.CENTER_VERTICAL);
+  opts.setPadding(dp(14),dp(4),0,dp(4));
+  Switch sw=new Switch(this);
+  sw.setText("Hey Buddy wake mode");
+  sw.setTextColor(WHITE);
+  sw.setTextSize(14);
+  sw.setOnCheckedChangeListener((v,x)->{
+   handsFree=x;
+   mainHandler.removeCallbacks(wakeRetry);
+   if(x){
+    stopTts();
+    listenForWakeWord();
+   }else{
+    listenMode=ListenMode.OFF;
+    stopListening();
+    setState("● Ready",CYAN);
+   }
+  });
+  opts.addView(sw,new LinearLayout.LayoutParams(0,-2,1));
+
+  Button set=btn("Settings",44,CARD2,13);
+  set.setOnClickListener(v->settings());
+  opts.addView(set);
+  c.addView(opts);
+  gap(c,10);
+
+  TextView foot=txt("Local controls • AI fallback • Confirmation for calls",12,MUTED,false);
+  foot.setGravity(Gravity.CENTER);
+  c.addView(foot);
+
+  setContentView(root);
+  initSpeech();
  }
-
  private String accessText(){return BuddyAccessibilityService.isEnabled()?"✓ Full navigation control enabled":"○ Optional: enable Accessibility for Back/Home/Recents/scroll/tap/type";}
  private void chip(LinearLayout r,String label,String cmd){Button b=btn(label,42,CARD2,12);b.setOnClickListener(v->command(cmd));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,42,1);p.setMargins(3,0,3,0);r.addView(b,p);}
 
@@ -103,86 +215,99 @@ public class MainActivity extends Activity {
  private void initSpeech(){
   if(!SpeechRecognizer.isRecognitionAvailable(this)){
    setState("● Speech recognition unavailable",Color.RED);
+   sr=null;
    return;
   }
-  sr=SpeechRecognizer.createSpeechRecognizer(this);
-  sr.setRecognitionListener(new RecognitionListener(){
-   public void onReadyForSpeech(Bundle b){
-    listening=true;
-    mic.setText(listenMode==ListenMode.WAKE?"● WAITING FOR BUDDY":"● LISTENING");
-    setState(listenMode==ListenMode.WAKE?"● Waiting for “Hey Buddy”…":"● Listening…",CYAN);
+  try{
+   if(sr!=null){try{sr.destroy();}catch(Exception ignored){}}
+   sr=null;
+   if(Build.VERSION.SDK_INT>=31&&SpeechRecognizer.isOnDeviceRecognitionAvailable(this)){
+    try{sr=SpeechRecognizer.createOnDeviceSpeechRecognizer(this);}catch(RuntimeException ignored){}
    }
-   public void onBeginningOfSpeech(){}
-   public void onRmsChanged(float r){}
-   public void onBufferReceived(byte[] b){}
-   public void onEndOfSpeech(){}
-   public void onError(int e){
-    if(suppressRecognizerCallbacks)return;
-    listening=false;
-    mic.setText("🎙  TAP TO TALK");
-    if(handsFree && listenMode==ListenMode.WAKE){
-     mic.postDelayed(MainActivity.this::listenForWakeWord,450);
-    } else {
-     listenMode=ListenMode.OFF;
-     setState("● Ready",CYAN);
+   if(sr==null)sr=SpeechRecognizer.createSpeechRecognizer(this);
+   sr.setRecognitionListener(new RecognitionListener(){
+    public void onReadyForSpeech(Bundle b){
+     listening=true;
+     if(mic!=null)mic.setText(listenMode==ListenMode.WAKE?"● WAITING FOR BUDDY":"● LISTENING");
+     setState(listenMode==ListenMode.WAKE?"● Waiting for “Hey Buddy”…":"● Listening…",CYAN);
     }
-   }
-   public void onResults(Bundle b){
-    if(suppressRecognizerCallbacks)return;
-    listening=false;
-    ArrayList<String> a=b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-    if(listenMode==ListenMode.WAKE){
-     boolean woke=false;
-     String wakeCommand=null;
-     if(a!=null) for(String r:a){
-      if(CommandRouter.isWakePhrase(r)){
-       woke=true;
-       wakeCommand=CommandRouter.removeWakePhrase(r);
-       break;
+    public void onBeginningOfSpeech(){}
+    public void onRmsChanged(float r){}
+    public void onBufferReceived(byte[] b){}
+    public void onEndOfSpeech(){}
+    public void onError(int e){
+     listening=false;
+     if(suppressRecognizerCallbacks)return;
+     if(mic!=null)mic.setText("🎙  TAP TO TALK");
+     if(handsFree&&listenMode==ListenMode.WAKE){
+      if(e==SpeechRecognizer.ERROR_RECOGNIZER_BUSY||e==SpeechRecognizer.ERROR_CLIENT){
+       try{initSpeech();}catch(Exception ignored){}
       }
+      scheduleWake(650);
+     }else{
+      listenMode=ListenMode.OFF;
+      setState(e==SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS?"● Mic permission required":"● Ready",e==SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS?Color.RED:CYAN);
      }
-     if(woke){
-      listenMode=ListenMode.COMMAND;
-      mic.setText("● LISTENING");
-      if(wakeCommand!=null&&!wakeCommand.trim().isEmpty()){
-       command(wakeCommand.trim());
-      } else {
-       listen();
-      }
-     } else if(handsFree){
-      mic.postDelayed(MainActivity.this::listenForWakeWord,250);
-     }
-     return;
     }
-    mic.setText("🎙  TAP TO TALK");
-    listenMode=handsFree?ListenMode.WAKE:ListenMode.OFF;
-    if(a!=null&&!a.isEmpty()) command(a.get(0));
-   }
-   public void onPartialResults(Bundle b){}
-   public void onEvent(int e,Bundle b){}
-  });
+    public void onResults(Bundle b){
+     listening=false;
+     if(suppressRecognizerCallbacks)return;
+     ArrayList<String> a=b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+     if(listenMode==ListenMode.WAKE){
+      boolean woke=false;
+      String wakeCommand=null;
+      if(a!=null)for(String r:a){
+       if(CommandRouter.isWakePhrase(r)){
+        woke=true;
+        wakeCommand=CommandRouter.removeWakePhrase(r);
+        break;
+       }
+      }
+      if(woke){
+       mainHandler.removeCallbacks(wakeRetry);
+       listenMode=ListenMode.COMMAND;
+       if(mic!=null)mic.setText("● LISTENING");
+       if(wakeCommand!=null&&!wakeCommand.trim().isEmpty())command(wakeCommand.trim());
+       else listen();
+      }else if(handsFree){
+       scheduleWake(250);
+      }
+      return;
+     }
+     if(mic!=null)mic.setText("🎙  TAP TO TALK");
+     if(a!=null&&!a.isEmpty())command(a.get(0));
+     else{
+      listenMode=handsFree?ListenMode.WAKE:ListenMode.OFF;
+      setState(handsFree?"● Waiting for “Hey Buddy”…":"● Ready",CYAN);
+      if(handsFree)scheduleWake(250);
+     }
+    }
+    public void onPartialResults(Bundle b){}
+    public void onEvent(int e,Bundle b){}
+   });
+  }catch(Throwable t){
+   sr=null;
+   setState("● Voice input unavailable",Color.RED);
+  }
+ }
+
+ private void scheduleWake(long delay){
+  mainHandler.removeCallbacks(wakeRetry);
+  if(handsFree&&!isFinishing())mainHandler.postDelayed(wakeRetry,delay);
  }
 
  private void listen(){
-  suppressRecognizerCallbacks=false;
-  stopTts();
-  if(Build.VERSION.SDK_INT>=23&&checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){
-   requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},7);
-   return;
-  }
-  if(sr==null)initSpeech();
-  listenMode=ListenMode.COMMAND;
-  Intent i=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-  i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-  i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,lang);
-  i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS,5);
-  i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS,false);
-  i.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE,true);
-  try{sr.startListening(i);}catch(Exception e){listening=false;setState("● Mic busy",Color.RED);}
+  mainHandler.removeCallbacks(wakeRetry);
+  startRecognition(false);
  }
 
  private void listenForWakeWord(){
-  if(!handsFree||speaking)return;
+  if(!handsFree||speaking||isFinishing())return;
+  if(listening)return;
+  startRecognition(true);
+ }
+
+ private void startRecognition(boolean wake){
   suppressRecognizerCallbacks=false;
   stopTts();
   if(Build.VERSION.SDK_INT>=23&&checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){
@@ -190,27 +315,42 @@ public class MainActivity extends Activity {
    return;
   }
   if(sr==null)initSpeech();
-  if(listening)return;
-  listenMode=ListenMode.WAKE;
+  if(sr==null){
+   setState("● Voice input unavailable",Color.RED);
+   return;
+  }
+  listenMode=wake?ListenMode.WAKE:ListenMode.COMMAND;
   Intent i=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
   i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-  i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,lang);
+  i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,wake?"en-IN":lang);
   i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS,5);
   i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS,false);
   i.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE,true);
-  try{sr.startListening(i);}catch(Exception e){listening=false;mic.postDelayed(MainActivity.this::listenForWakeWord,500);}
+  i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,900);
+  i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,700);
+  try{
+   sr.startListening(i);
+  }catch(RuntimeException e){
+   listening=false;
+   try{sr.destroy();}catch(Exception ignored){}
+   sr=null;
+   if(wake){scheduleWake(700);}
+   else{
+    setState("● Mic busy — tap again",Color.RED);
+    if(mic!=null)mic.setText("🎙  TAP TO TALK");
+   }
+  }
  }
 
  private void stopListening(){
-  if(sr!=null){
-   suppressRecognizerCallbacks=true;
+  suppressRecognizerCallbacks=true;
+  mainHandler.removeCallbacks(wakeRetry);
+  if(sr!=null&&listening){
    try{sr.cancel();}catch(Exception ignored){}
-   // Keep callbacks suppressed until the next explicit listen() / wake-listen start.
   }
   listening=false;
-  mic.setText("🎙  TAP TO TALK");
+  if(mic!=null)mic.setText("🎙  TAP TO TALK");
  }
-
  private void stopTts(){
   speaking=false;
   if(tts!=null)try{tts.stop();}catch(Exception ignored){}
@@ -220,7 +360,7 @@ public class MainActivity extends Activity {
   speaking=false;
   if(handsFree && listenMode!=ListenMode.COMMAND && !isFinishing()){
    listenMode=ListenMode.WAKE;
-   listenForWakeWord();
+   scheduleWake(180);
   }
  }
  private String norm(String s){return CommandRouter.normalize(s);}
@@ -260,11 +400,11 @@ public class MainActivity extends Activity {
   String tap=extractAfter(s,"tap ","click ");if(tap!=null&&!tap.isEmpty()){if(BuddyAccessibilityService.isEnabled())ok("Tap "+tap,()->BuddyAccessibilityService.get().clickText(tap));else reply("Accessibility enable karo.");return;}
   String type=extractAfter(s,"type ","likho ");if(type!=null&&!type.isEmpty()){if(BuddyAccessibilityService.isEnabled())ok("Text enter kar raha hoon.",()->BuddyAccessibilityService.get().typeText(type));else reply("Accessibility enable karo.");return;}
 
-  boolean open=has(s,"khol","open","launch","start","chala");String app=null;if(open)for(String k:apps.keySet())if(s.contains(k)){app=k;break;}
+  boolean open=has(s,"khol","open","launch","start","chala","run");String app=null;if(open)for(String k:apps.keySet())if(s.contains(k)){app=k;break;}
   if(app!=null){String a=app;exec(pretty(a)+" khol raha hoon.",()->openApp(a));return;}
 
   if(has(s,"flashlight","torch")){toggleFlash();return;}
-  if(has(s,"play music","music chala","pause music","media")){((AudioManager)getSystemService(AUDIO_SERVICE)).dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));reply("Media control.");return;}
+  if(has(s,"play music","music chala","pause music","media")){AudioManager am=(AudioManager)getSystemService(AUDIO_SERVICE);am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));reply("Media control.");return;}
 
   String q=search(s);if(q!=null){exec("Google search khol raha hoon.",()->web(q));return;}
   cloud(raw);
@@ -372,16 +512,23 @@ public class MainActivity extends Activity {
  private void exec(String msg,Runnable r){try{r.run();reply(msg);}catch(Exception e){reply("Phone ne ye action allow nahi kiya.");}}
  private void ok(String msg,Runnable r){try{r.run();reply(msg+" done.");}catch(Exception e){reply(msg+" nahi hua.");}}
  private void reply(String s){
+  final String msg=(s==null||s.trim().isEmpty())?"Done.":s.trim();
   runOnUiThread(()->{
-   buddy.setText(s);
+   if(isFinishing()||isDestroyed())return;
+   if(buddy!=null)buddy.setText(msg);
    stopListening();
-   if(handsFree) listenMode=ListenMode.WAKE; else listenMode=ListenMode.OFF;
+   if(handsFree)listenMode=ListenMode.WAKE; else listenMode=ListenMode.OFF;
    setState(handsFree?"● Waiting for “Hey Buddy”…":"● Ready",CYAN);
-   if(ttsReady){
+   if(ttsReady&&tts!=null){
     speaking=true;
-    try{tts.speak(s,TextToSpeech.QUEUE_FLUSH,null,"buddy-"+System.nanoTime());}
-    catch(Exception ignored){speaking=false;resumeWakeAfterSpeech();}
-   } else resumeWakeAfterSpeech();
+    try{
+     int r=tts.speak(msg,TextToSpeech.QUEUE_FLUSH,null,"buddy-"+System.nanoTime());
+     if(r==TextToSpeech.ERROR){speaking=false;resumeWakeAfterSpeech();}
+    }catch(Throwable ignored){
+     speaking=false;
+     resumeWakeAfterSpeech();
+    }
+   }else resumeWakeAfterSpeech();
   });
  }
  private void youtubeSearch(String q){
@@ -525,6 +672,7 @@ public class MainActivity extends Activity {
  @Override protected void onResume(){
   super.onResume();
   if(accessLabel!=null)accessLabel.setText(accessText());
+  if(handsFree&&!listening&&listenMode==ListenMode.WAKE)scheduleWake(250);
  }
 
  @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){
@@ -562,9 +710,10 @@ public class MainActivity extends Activity {
  }
 
  @Override protected void onDestroy(){
-  stopListening();
-  if(sr!=null)sr.destroy();
-  if(tts!=null)tts.shutdown();
+  mainHandler.removeCallbacksAndMessages(null);
+  suppressRecognizerCallbacks=true;
+  if(sr!=null){try{sr.cancel();}catch(Exception ignored){}try{sr.destroy();}catch(Exception ignored){}sr=null;}
+  if(tts!=null){try{tts.stop();}catch(Exception ignored){}tts.shutdown();}
   net.shutdownNow();
   super.onDestroy();
  }
