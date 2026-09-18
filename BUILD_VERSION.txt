@@ -1,0 +1,2 @@
+Buddy V2 MVP artifact build
+Source revision: c738e30c55f6e6afadd287b76ec4f1b6f0530c6f
