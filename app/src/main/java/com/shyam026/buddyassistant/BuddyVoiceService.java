@@ -20,7 +20,7 @@ public class BuddyVoiceService extends Service {
     @Override public void onCreate(){
         super.onCreate();
         createChannel();
-        tts=new TextToSpeech(this,status->{if(status==TextToSpeech.SUCCESS){tts.setSpeechRate(1.05f);tts.setPitch(1.08f);}});
+        tts=new TextToSpeech(this,status->{if(status==TextToSpeech.SUCCESS) BuddyVoiceProfile.apply(tts,Locale.forLanguageTag("en-IN"));});
         initRecognizer();
     }
 
@@ -102,12 +102,22 @@ public class BuddyVoiceService extends Service {
         if(tts==null||msg==null)return;
         speaking=true;
         try{
-            tts.setLanguage(Locale.forLanguageTag("en-IN"));
-            tts.speak(msg,TextToSpeech.QUEUE_FLUSH,null,"buddy-service-"+System.nanoTime());
-            handler.postDelayed(()->{speaking=false;schedule(250);},Math.max(900,msg.length()*45L));
-        }catch(Throwable t){speaking=false;schedule(250);}
+            String natural=BuddyVoiceProfile.naturalize(msg);
+            int result=tts.speak(natural,TextToSpeech.QUEUE_FLUSH,null,"buddy-service-"+System.nanoTime());
+            if(result==TextToSpeech.ERROR){
+                speaking=false;
+                schedule(250);
+                return;
+            }
+            handler.postDelayed(()->{
+                speaking=false;
+                schedule(250);
+            },Math.max(1000,natural.length()*48L));
+        }catch(Throwable t){
+            speaking=false;
+            schedule(250);
+        }
     }
-
     private void schedule(long delay){handler.removeCallbacks(restart);if(!stopping)handler.postDelayed(restart,delay);}
 
     private Notification notification(){
