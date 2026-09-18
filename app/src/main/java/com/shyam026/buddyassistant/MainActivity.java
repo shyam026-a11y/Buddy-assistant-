@@ -10,6 +10,7 @@ import android.media.*;
 import android.net.Uri;
 import android.os.*;
 import android.provider.Settings;
+import android.provider.ContactsContract;
 import android.speech.*;
 import android.speech.tts.*;
 import android.telephony.SmsManager;
@@ -27,8 +28,11 @@ public class MainActivity extends Activity {
  private static final String PREF="buddy_prefs", KEY="openrouter_key";
  private SharedPreferences prefs; private SpeechRecognizer sr; private TextToSpeech tts;
  private boolean ttsReady,listening,handsFree; private String lang="en-IN";
+ private enum ListenMode { OFF, COMMAND, WAKE }
+ private ListenMode listenMode=ListenMode.OFF;
+ private String pendingWaContact="", pendingWaMessage="";
  private final ExecutorService net=Executors.newSingleThreadExecutor();
- private TextView state,user,buddy; private Button mic,langBtn;
+ private TextView state,user,buddy,accessLabel; private Button mic,langBtn;
  private final int BG=Color.rgb(11,16,32),CARD=Color.rgb(23,28,51),CARD2=Color.rgb(31,37,65),WHITE=Color.WHITE,MUTED=Color.rgb(165,172,201),ACCENT=Color.rgb(124,92,255),CYAN=Color.rgb(93,208,255);
  private final Map<String,String> apps=new LinkedHashMap<>();
 
@@ -64,40 +68,148 @@ public class MainActivity extends Activity {
   chip(chips,"YouTube","YouTube kholo");chip(chips,"Volume +","volume badhao");chip(chips,"Brightness","brightness 60");chip(chips,"Back","back jao");c.addView(chips);gap(c,12);
 
   LinearLayout access=new LinearLayout(this);access.setOrientation(LinearLayout.VERTICAL);access.setPadding(dp(14),dp(12),dp(14),dp(12));access.setBackground(bg(CARD,16));
-  access.addView(txt("DEVICE CONTROL",11,MUTED,true));TextView at=txt(accessText(),14,WHITE,false);access.addView(at);Button ae=btn("Enable phone control",44,CARD2,13);ae.setOnClickListener(v->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));access.addView(ae);c.addView(access);gap(c,12);
+  access.addView(txt("DEVICE CONTROL",11,MUTED,true));accessLabel=txt(accessText(),14,WHITE,false);access.addView(accessLabel);Button ae=btn("Enable phone control",44,CARD2,13);ae.setOnClickListener(v->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));access.addView(ae);c.addView(access);gap(c,12);
 
-  LinearLayout opts=new LinearLayout(this);Switch sw=new Switch(this);sw.setText("Hey Buddy / hands-free mode");sw.setTextColor(WHITE);sw.setOnCheckedChangeListener((v,x)->{handsFree=x;if(x)listen();});opts.addView(sw,new LinearLayout.LayoutParams(0,-2,1));
+  LinearLayout opts=new LinearLayout(this);Switch sw=new Switch(this);sw.setText("Hey Buddy wake mode");sw.setTextColor(WHITE);sw.setTextSize(14);sw.setOnCheckedChangeListener((v,x)->{handsFree=x;if(x){stopTts();listenForWakeWord();}else{listenMode=ListenMode.OFF;stopListening();setState("● Ready",CYAN);}});opts.addView(sw,new LinearLayout.LayoutParams(0,-2,1));
   Button set=btn("Settings",46,CARD2,14);set.setOnClickListener(v->settings());opts.addView(set);c.addView(opts);gap(c,12);
-  TextView foot=txt("Local actions first • AI fallback • Accessibility is optional",12,MUTED,false);foot.setGravity(Gravity.CENTER);c.addView(foot);
+  TextView foot=txt("Local first • AI fallback • Wake mode listens only for “Hey Buddy”",12,MUTED,false);foot.setGravity(Gravity.CENTER);c.addView(foot);
   setContentView(root);initSpeech();
  }
 
  private String accessText(){return BuddyAccessibilityService.isEnabled()?"✓ Full navigation control enabled":"○ Optional: enable Accessibility for Back/Home/Recents/scroll/tap/type";}
  private void chip(LinearLayout r,String label,String cmd){Button b=btn(label,42,CARD2,12);b.setOnClickListener(v->command(cmd));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,42,1);p.setMargins(3,0,3,0);r.addView(b,p);}
 
- private void initTts(){tts=new TextToSpeech(this,x->{if(x==TextToSpeech.SUCCESS){ttsReady=true;tts.setSpeechRate(1.08f);tts.setPitch(1.08f);}});}
+ private void initTts(){
+  tts=new TextToSpeech(this,x->{
+   if(x==TextToSpeech.SUCCESS){
+    ttsReady=true;
+    tts.setSpeechRate(1.08f);
+    tts.setPitch(1.08f);
+    tts.setOnUtteranceProgressListener(new UtteranceProgressListener(){
+     @Override public void onStart(String id){}
+     @Override public void onDone(String id){runOnUiThread(MainActivity.this::resumeWakeAfterSpeech);}
+     @Override public void onError(String id){runOnUiThread(MainActivity.this::resumeWakeAfterSpeech);}
+    });
+   }
+  });
+ }
+
  private void initSpeech(){
-  if(!SpeechRecognizer.isRecognitionAvailable(this)){setState("● Speech recognition unavailable",Color.RED);return;}
-  sr=SpeechRecognizer.createSpeechRecognizer(this);sr.setRecognitionListener(new RecognitionListener(){
-   public void onReadyForSpeech(Bundle b){listening=true;mic.setText("● LISTENING");setState("● Listening…",CYAN);}
-   public void onBeginningOfSpeech(){} public void onRmsChanged(float r){} public void onBufferReceived(byte[] b){} public void onEndOfSpeech(){}
-   public void onError(int e){listening=false;mic.setText("🎙 TAP TO TALK");setState("● Ready",CYAN);if(handsFree)mic.postDelayed(MainActivity.this::listen,700);}
-   public void onResults(Bundle b){listening=false;mic.setText("🎙 TAP TO TALK");ArrayList<String>a=b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);if(a!=null&&!a.isEmpty())command(a.get(0));}
-   public void onPartialResults(Bundle b){} public void onEvent(int e,Bundle b){}
+  if(!SpeechRecognizer.isRecognitionAvailable(this)){
+   setState("● Speech recognition unavailable",Color.RED);
+   return;
+  }
+  sr=SpeechRecognizer.createSpeechRecognizer(this);
+  sr.setRecognitionListener(new RecognitionListener(){
+   public void onReadyForSpeech(Bundle b){
+    listening=true;
+    mic.setText(listenMode==ListenMode.WAKE?"● WAITING FOR BUDDY":"● LISTENING");
+    setState(listenMode==ListenMode.WAKE?"● Waiting for “Hey Buddy”…":"● Listening…",CYAN);
+   }
+   public void onBeginningOfSpeech(){}
+   public void onRmsChanged(float r){}
+   public void onBufferReceived(byte[] b){}
+   public void onEndOfSpeech(){}
+   public void onError(int e){
+    listening=false;
+    mic.setText("🎙  TAP TO TALK");
+    if(handsFree && listenMode==ListenMode.WAKE){
+     mic.postDelayed(MainActivity.this::listenForWakeWord,450);
+    } else {
+     listenMode=ListenMode.OFF;
+     setState("● Ready",CYAN);
+    }
+   }
+   public void onResults(Bundle b){
+    listening=false;
+    ArrayList<String> a=b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+    if(listenMode==ListenMode.WAKE){
+     boolean woke=false;
+     String wakeCommand=null;
+     if(a!=null) for(String r:a){
+      if(CommandRouter.isWakePhrase(r)){
+       woke=true;
+       wakeCommand=CommandRouter.removeWakePhrase(r);
+       break;
+      }
+     }
+     if(woke){
+      listenMode=ListenMode.COMMAND;
+      mic.setText("● LISTENING");
+      if(wakeCommand!=null&&!wakeCommand.trim().isEmpty()){
+       command(wakeCommand.trim());
+      } else {
+       listen();
+      }
+     } else if(handsFree){
+      mic.postDelayed(MainActivity.this::listenForWakeWord,250);
+     }
+     return;
+    }
+    mic.setText("🎙  TAP TO TALK");
+    listenMode=handsFree?ListenMode.WAKE:ListenMode.OFF;
+    if(a!=null&&!a.isEmpty()) command(a.get(0));
+   }
+   public void onPartialResults(Bundle b){}
+   public void onEvent(int e,Bundle b){}
   });
  }
 
  private void listen(){
-  if(listening)return;
-  if(Build.VERSION.SDK_INT>=23&&checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},7);return;}
-  if(sr==null)initSpeech();Intent i=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-  i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,lang);i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS,5);
-  try{sr.startListening(i);}catch(Exception e){setState("● Mic busy",Color.RED);}
+  stopTts();
+  if(Build.VERSION.SDK_INT>=23&&checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){
+   requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},7);
+   return;
+  }
+  if(sr==null)initSpeech();
+  listenMode=ListenMode.COMMAND;
+  Intent i=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+  i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+  i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,lang);
+  i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS,5);
+  i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS,false);
+  try{sr.startListening(i);}catch(Exception e){listening=false;setState("● Mic busy",Color.RED);}
  }
 
- private String norm(String s){return s.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9+% ]"," ").replaceAll("\\s+"," ").trim();}
+ private void listenForWakeWord(){
+  if(!handsFree)return;
+  stopTts();
+  if(Build.VERSION.SDK_INT>=23&&checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){
+   requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},7);
+   return;
+  }
+  if(sr==null)initSpeech();
+  if(listening)return;
+  listenMode=ListenMode.WAKE;
+  Intent i=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+  i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+  i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,lang);
+  i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS,5);
+  i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS,false);
+  try{sr.startListening(i);}catch(Exception e){listening=false;mic.postDelayed(MainActivity.this::listenForWakeWord,500);}
+ }
+
+ private void stopListening(){
+  if(sr!=null){
+   try{sr.cancel();}catch(Exception ignored){}
+  }
+  listening=false;
+  mic.setText("🎙  TAP TO TALK");
+ }
+
+ private void stopTts(){
+  if(tts!=null)try{tts.stop();}catch(Exception ignored){}
+ }
+
+ private void resumeWakeAfterSpeech(){
+  if(handsFree && listenMode!=ListenMode.COMMAND && !isFinishing()){
+   listenMode=ListenMode.WAKE;
+   listenForWakeWord();
+  }
+ }
+ private String norm(String s){return CommandRouter.normalize(s);}
  private boolean has(String s,String...x){for(String a:x)if(s.contains(a))return true;return false;}
- private Integer num(String s){java.util.regex.Matcher m=java.util.regex.Pattern.compile("\\b(\\d{1,3})\\b").matcher(s);return m.find()?Integer.valueOf(m.group(1)):null;}
+ private Integer num(String s){return CommandRouter.extractNumber(s);}
 
  private void command(String raw){
   if(raw==null)return;user.setText(raw);setState("● Thinking…",CYAN);String s=norm(raw);
@@ -105,6 +217,12 @@ public class MainActivity extends Activity {
   if(has(s,"time batao","what time","kitne baje","time kya")){reply(new SimpleDateFormat("hh:mm a",Locale.getDefault()).format(new Date()));return;}
   if(has(s,"date batao","aaj ki date","today date")){reply(new SimpleDateFormat("dd MMMM yyyy",Locale.getDefault()).format(new Date()));return;}
   if(has(s,"battery","charge kitna")){reply(battery());return;}
+
+  String ytq=CommandRouter.youtubeQuery(s);
+  if(ytq!=null&&!ytq.isEmpty()){exec("YouTube me “"+ytq+"” search kar raha hoon.",()->youtubeSearch(ytq));return;}
+
+  CommandRouter.WhatsAppRequest wa=CommandRouter.parseWhatsApp(s);
+  if(wa!=null){sendWhatsAppFlow(wa.contact,wa.message);return;}
 
   if(has(s,"back jao","go back","back")){if(BuddyAccessibilityService.isEnabled())ok("Back",()->BuddyAccessibilityService.get().global("back"));else reply("Accessibility enable karo, tab main Back kar sakta hoon.");return;}
   if(has(s,"home screen","go home","home jao")){if(BuddyAccessibilityService.isEnabled())ok("Home",()->BuddyAccessibilityService.get().global("home"));else startHome();return;}
@@ -145,10 +263,92 @@ public class MainActivity extends Activity {
  private void sendSmsFlow(String s){final EditText e=new EditText(this);e.setText(s);e.setHint("message text");new AlertDialog.Builder(this).setTitle("Send SMS").setMessage("Number manually enter karo. Buddy bina confirmation ke SMS nahi bhejega.").setView(e).setNegativeButton("Cancel",null).setPositiveButton("Continue",(d,w)->{final EditText n=new EditText(this);n.setHint("phone number");new AlertDialog.Builder(this).setTitle("Recipient").setView(n).setNegativeButton("Cancel",null).setPositiveButton("Send",(d2,w2)->sendSms(n.getText().toString(),e.getText().toString())).show();}).show();}
  private void sendSms(String n,String msg){try{if(Build.VERSION.SDK_INT>=23&&checkSelfPermission(Manifest.permission.SEND_SMS)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.SEND_SMS},8);return;}SmsManager.getDefault().sendTextMessage(n,null,msg,null,null);reply("SMS send kar diya.");}catch(Exception e){reply("SMS send nahi hua.");}}
  private void toggleFlash(){try{android.hardware.camera2.CameraManager cm=(android.hardware.camera2.CameraManager)getSystemService(CAMERA_SERVICE);String id=cm.getCameraIdList()[0];Boolean now=getPreferences(0).getBoolean("flash",false);cm.setTorchMode(id,!now);getPreferences(0).edit().putBoolean("flash",!now).apply();reply(!now?"Torch on.":"Torch off.");}catch(Exception e){reply("Torch control available nahi hai.");}}
- private String search(String s){String[]p={"google pe search ","google par search ","search ","find "};for(String x:p)if(s.startsWith(x))return s.substring(x.length()).trim();return null;}
+ private String search(String s){return CommandRouter.googleSearchQuery(s);}
  private void exec(String msg,Runnable r){try{r.run();reply(msg);}catch(Exception e){reply("Phone ne ye action allow nahi kiya.");}}
  private void ok(String msg,Runnable r){try{r.run();reply(msg+" done.");}catch(Exception e){reply(msg+" nahi hua.");}}
- private void reply(String s){runOnUiThread(()->{buddy.setText(s);setState("● Ready",CYAN);if(ttsReady)try{tts.speak(s,TextToSpeech.QUEUE_FLUSH,null,"buddy");}catch(Exception ignored){}if(handsFree)mic.postDelayed(this::listen,650);});}
+ private void reply(String s){
+  runOnUiThread(()->{
+   buddy.setText(s);
+   setState("● Ready",CYAN);
+   if(ttsReady){
+    try{tts.speak(s,TextToSpeech.QUEUE_FLUSH,null,"buddy-"+System.nanoTime());}
+    catch(Exception ignored){resumeWakeAfterSpeech();}
+   } else resumeWakeAfterSpeech();
+  });
+ }
+ private void youtubeSearch(String q){
+  Intent i=new Intent(Intent.ACTION_SEARCH);
+  i.setPackage("com.google.android.youtube");
+  i.putExtra(SearchManager.QUERY,q);
+  try{startActivity(i);}
+  catch(Exception e){web(q);}
+ }
+
+ private void sendWhatsAppFlow(String contact,String message){
+  pendingWaContact=contact;
+  pendingWaMessage=message;
+  if(Build.VERSION.SDK_INT>=23&&checkSelfPermission(Manifest.permission.READ_CONTACTS)!=PackageManager.PERMISSION_GRANTED){
+   requestPermissions(new String[]{Manifest.permission.READ_CONTACTS},9);
+   reply("Contacts permission chahiye. Ek baar allow kar do.");
+   return;
+  }
+  openWhatsAppForContact(contact,message);
+ }
+
+ private void openWhatsAppForContact(String contact,String message){
+  String number=findContactNumber(contact);
+  if(number==null){
+   new AlertDialog.Builder(this)
+    .setTitle("WhatsApp message")
+    .setMessage("Contact “"+contact+"” nahi mila. WhatsApp ko message ke saath open karun?")
+    .setNegativeButton("Cancel",null)
+    .setPositiveButton("Open WhatsApp",(d,w)->shareWhatsApp(message))
+    .show();
+   return;
+  }
+  String url="https://wa.me/"+formatWhatsAppNumber(number)+"?text="+Uri.encode(message);
+  try{
+   Intent i=new Intent(Intent.ACTION_VIEW,Uri.parse(url));
+   startActivity(i);
+   reply("Message ready hai. WhatsApp me Send tap kar dena.");
+  }catch(Exception e){
+   shareWhatsApp(message);
+  }
+ }
+
+ private String findContactNumber(String wanted){
+  Cursor c=null;
+  try{
+   String q=wanted.replace("'","''");
+   c=getContentResolver().query(
+    ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+    new String[]{ContactsContract.CommonDataKinds.Phone.NUMBER},
+    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME+" LIKE ?",
+    new String[]{"%"+q+"%"},
+    ContactsContract.CommonDataKinds.Phone.IS_PRIMARY+" DESC"
+   );
+   if(c!=null&&c.moveToFirst()) return c.getString(0);
+  }catch(Exception ignored){} finally {if(c!=null)c.close();}
+  return null;
+ }
+
+ private String formatWhatsAppNumber(String raw){
+  String n=raw.replaceAll("[^0-9]","");
+  if(n.length()==10)n="91"+n;
+  return n;
+ }
+
+ private void shareWhatsApp(String message){
+  try{
+   Intent i=new Intent(Intent.ACTION_SEND);
+   i.setType("text/plain");
+   i.setPackage("com.whatsapp");
+   i.putExtra(Intent.EXTRA_TEXT,message);
+   startActivity(i);
+   reply("WhatsApp open hai, chat select karke Send tap karo.");
+  }catch(Exception e){reply("WhatsApp available nahi hai.");}
+ }
+
  private void openApp(String a){Intent i=getPackageManager().getLaunchIntentForPackage(apps.get(a));if(i==null)throw new ActivityNotFoundException();startActivity(i);}
  private void setBright(int p){if(!Settings.System.canWrite(this)){allowWrite();throw new IllegalStateException();}Settings.System.putInt(getContentResolver(),Settings.System.SCREEN_BRIGHTNESS,Math.max(1,Math.min(100,p))*255/100);}
  private void changeBright(int d){if(!Settings.System.canWrite(this)){allowWrite();throw new IllegalStateException();}int c=Settings.System.getInt(getContentResolver(),Settings.System.SCREEN_BRIGHTNESS,128);Settings.System.putInt(getContentResolver(),Settings.System.SCREEN_BRIGHTNESS,Math.max(1,Math.min(255,c+(255*d/100))));}
@@ -159,5 +359,27 @@ public class MainActivity extends Activity {
  private void settings(){LinearLayout p=new LinearLayout(this);p.setOrientation(LinearLayout.VERTICAL);p.setPadding(dp(24),0,dp(24),0);EditText e=new EditText(this);e.setHint("OpenRouter API key");e.setSingleLine(true);e.setInputType(0x81);e.setText(prefs.getString(KEY,""));p.addView(e);Button a=btn("Accessibility settings",46,CARD2,13);a.setOnClickListener(v->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));p.addView(a);Button n=btn("Notification access",46,CARD2,13);n.setOnClickListener(v->startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")));p.addView(n);new AlertDialog.Builder(this).setTitle("Buddy Settings").setView(p).setNegativeButton("Close",null).setPositiveButton("Save",(d,w)->prefs.edit().putString(KEY,e.getText().toString().trim()).apply()).show();}
  private void setState(String s,int c){runOnUiThread(()->{if(state!=null){state.setText(s);state.setTextColor(c);}});}
  private String pretty(String s){return s.substring(0,1).toUpperCase(Locale.ROOT)+s.substring(1);}
- @Override protected void onDestroy(){if(sr!=null)sr.destroy();if(tts!=null)tts.shutdown();net.shutdownNow();super.onDestroy();}
+ @Override protected void onResume(){
+  super.onResume();
+  if(accessLabel!=null)accessLabel.setText(accessText());
+ }
+
+ @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){
+  super.onRequestPermissionsResult(requestCode,permissions,grantResults);
+  if(requestCode==9){
+   if(grantResults.length>0&&grantResults[0]==PackageManager.PERMISSION_GRANTED){
+    openWhatsAppForContact(pendingWaContact,pendingWaMessage);
+   }else reply("Contacts permission deny hua, isliye contact automatically nahi mila.");
+  }else if(requestCode==7 && grantResults.length>0&&grantResults[0]==PackageManager.PERMISSION_GRANTED){
+   if(handsFree) listenForWakeWord(); else listen();
+  }
+ }
+
+ @Override protected void onDestroy(){
+  stopListening();
+  if(sr!=null)sr.destroy();
+  if(tts!=null)tts.shutdown();
+  net.shutdownNow();
+  super.onDestroy();
+ }
 }
