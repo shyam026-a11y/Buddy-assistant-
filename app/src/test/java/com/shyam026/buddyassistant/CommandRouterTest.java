@@ -43,6 +43,29 @@ public class CommandRouterTest {
         }
     }
 
+    @Test public void hindiAndEdgeCases(){
+        assertEquals("youtube kholo", CommandRouter.normalize("YouTube   KHOLo!!!"));
+        assertNull(CommandRouter.youtubeQuery("youtube kholo"));
+        assertNull(CommandRouter.googleSearchQuery("volume badhao"));
+        assertNull(CommandRouter.parseWhatsApp("whatsapp kholo"));
+        assertEquals(Integer.valueOf(60), CommandRouter.extractNumber("brightness 60"));
+        assertEquals(Integer.valueOf(100), CommandRouter.extractNumber("volume 100 percent"));
+    }
+
+    @Test public void repeatedParserStress(){
+        String[] commands={
+            "hey buddy","hey buddy youtube kholo","youtube pe search physics",
+            "search jee maths","whatsapp message hello to rahul","volume 50",
+            "brightness 70","call rahul","back jao","home screen"
+        };
+        for(int i=0;i<100;i++){
+            String c=commands[i%commands.length];
+            String n=CommandRouter.normalize(c);
+            assertNotNull(n);
+            assertFalse(n.isEmpty());
+        }
+    }
+
     @Test public void whatsappParsing(){
         CommandRouter.WhatsAppRequest r=CommandRouter.parseWhatsApp("whatsapp message hello bhai to rahul");
         assertNotNull(r);
