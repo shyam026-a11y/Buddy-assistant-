@@ -17,8 +17,8 @@ public final class CommandRouter {
 
     public static boolean isWakePhrase(String s){
         String n=normalize(s);
-        return n.equals("hey buddy") || n.equals("hey buddy") ||
-               n.startsWith("hey buddy ") || n.startsWith("hey, buddy ");
+        return n.equals("hey buddy")
+                || n.startsWith("hey buddy ");
     }
 
     public static String removeWakePhrase(String s){
@@ -35,20 +35,13 @@ public final class CommandRouter {
 
     public static CallRequest parseCall(String s){
         String n=normalize(s);
-        String[] p={
-            "call ","call karo ","phone ","phone karo ","dial ","dial karo ",
-            "ko call karo","ko phone karo"
-        };
-        for(String x:p){
-            int idx=n.indexOf(x);
-            if(idx>=0){
-                String t;
-                if(x.startsWith("ko ")) t=n.substring(0,idx).trim();
-                else t=n.substring(idx+x.length()).trim();
-                if(t.endsWith("ko")) t=t.substring(0,t.length()-2).trim();
-                if(!t.isEmpty()) return new CallRequest(t);
-            }
-        }
+
+        Matcher m=Pattern.compile("^(.+?)\\s+(?:ko )?(?:call|phone)\\s+(?:karo|kar do|do)$").matcher(n);
+        if(m.find()) return new CallRequest(m.group(1).trim());
+
+        m=Pattern.compile("^(?:call|phone|dial)(?:\\s+karo)?\\s+(.+)$").matcher(n);
+        if(m.find()) return new CallRequest(m.group(1).trim());
+
         return null;
     }
 
@@ -70,7 +63,10 @@ public final class CommandRouter {
 
     public static String googleSearchQuery(String s){
         String n=normalize(s);
-        String[] prefixes={"google pe search ","google par search ","google me search ","search ","find "};
+        String[] prefixes={
+            "google pe search ","google par search ","google me search ",
+            "google search ","search ","find "
+        };
         for(String p:prefixes) if(n.startsWith(p)) return n.substring(p.length()).trim();
         return null;
     }
@@ -83,9 +79,15 @@ public final class CommandRouter {
 
     public static WhatsAppRequest parseWhatsApp(String s){
         String n=normalize(s);
-        String[] starts={"whatsapp ","whatsapp pe ","whatsapp par "};
+
         String body=null;
-        for(String p:starts) if(n.startsWith(p)){body=n.substring(p.length()).trim();break;}
+        String[] starts={"whatsapp pe ","whatsapp par ","whatsapp me ","whatsapp "};
+        for(String p:starts){
+            if(n.startsWith(p)){
+                body=n.substring(p.length()).trim();
+                break;
+            }
+        }
         if(body==null)return null;
 
         Matcher m=Pattern.compile("^(?:message|msg|text|send message)\\s+(.+?)\\s+(?:ko|to)\\s+(.+)$").matcher(body);
