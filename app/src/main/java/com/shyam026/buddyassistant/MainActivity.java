@@ -2,6 +2,7 @@ package com.shyam026.buddyassistant;
 
 import android.Manifest;
 import android.app.*;
+import android.app.SearchManager;
 import android.content.*;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
