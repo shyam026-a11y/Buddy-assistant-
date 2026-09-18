@@ -80,9 +80,10 @@ public class CommandRouterTest {
 
     @Test public void callParsing(){
         assertEquals("rahul", CommandRouter.parseCall("rahul ko call karo").target);
+        assertEquals("rahul", CommandRouter.parseCall("rahul ko phone karo").target);
         assertEquals("rahul", CommandRouter.parseCall("call rahul").target);
+        assertEquals("rahul", CommandRouter.parseCall("phone rahul").target);
         assertEquals("9876543210", CommandRouter.parseCall("dial 9876543210").target);
-        assertEquals("mummy", CommandRouter.parseCall("phone mummy").target);
     }
 
     @Test public void numberParsing(){
