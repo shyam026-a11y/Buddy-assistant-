@@ -34,7 +34,7 @@ public class MainActivity extends Activity {
  private boolean ttsReady,listening,handsFree; private String lang="en-IN";
  private enum ListenMode { OFF, COMMAND, WAKE }
  private ListenMode listenMode=ListenMode.OFF;
- private String pendingWaContact="", pendingWaMessage="";
+ private String pendingWaContact="", pendingWaMessage="", pendingCallTarget="";
  private final ExecutorService net=Executors.newSingleThreadExecutor();
  private TextView state,user,buddy,accessLabel; private Button mic,langBtn;
  private final int BG=Color.rgb(11,16,32),CARD=Color.rgb(23,28,51),CARD2=Color.rgb(31,37,65),WHITE=Color.WHITE,MUTED=Color.rgb(165,172,201),ACCENT=Color.rgb(124,92,255),CYAN=Color.rgb(93,208,255);
@@ -269,8 +269,8 @@ public class MainActivity extends Activity {
   String number=raw.replaceAll("[^0-9+]","");
   if(number.isEmpty()){
    if(Build.VERSION.SDK_INT>=23&&checkSelfPermission(Manifest.permission.READ_CONTACTS)!=PackageManager.PERMISSION_GRANTED){
-    pendingWaContact=raw;
-    requestPermissions(new String[]{Manifest.permission.READ_CONTACTS},9);
+    pendingCallTarget=raw;
+    requestPermissions(new String[]{Manifest.permission.READ_CONTACTS},11);
     reply("Contacts permission chahiye. Ek baar allow kar do.");
     return;
    }
@@ -316,8 +316,9 @@ public class MainActivity extends Activity {
  private void reply(String s){
   runOnUiThread(()->{
    buddy.setText(s);
-   setState("● Ready",CYAN);
    stopListening();
+   if(handsFree) listenMode=ListenMode.WAKE; else listenMode=ListenMode.OFF;
+   setState(handsFree?"● Waiting for “Hey Buddy”…":"● Ready",CYAN);
    if(ttsReady){
     try{tts.speak(s,TextToSpeech.QUEUE_FLUSH,null,"buddy-"+System.nanoTime());}
     catch(Exception ignored){resumeWakeAfterSpeech();}
@@ -463,18 +464,25 @@ public class MainActivity extends Activity {
   super.onRequestPermissionsResult(requestCode,permissions,grantResults);
   boolean granted=grantResults.length>0&&grantResults[0]==PackageManager.PERMISSION_GRANTED;
   if(requestCode==9){
-   if(granted){
-    if(pendingWaMessage!=null&&pendingWaMessage.startsWith("CALL:")){
-     String n=findContactNumber(pendingWaContact);
-     if(n!=null)placeCall(n); else reply("Contact nahi mila.");
-     pendingWaContact=""; pendingWaMessage="";
-    }else openWhatsAppForContact(pendingWaContact,pendingWaMessage);
-   }else reply("Contacts permission deny hua.");
+   if(granted) openWhatsAppForContact(pendingWaContact,pendingWaMessage);
+   else reply("Contacts permission deny hua.");
   }else if(requestCode==10){
    String callNumber=pendingWaMessage!=null&&pendingWaMessage.startsWith("CALL:")?pendingWaMessage.substring(5):"";
    pendingWaMessage="";
    if(granted&&!callNumber.isEmpty())placeCall(callNumber);
    else if(!granted)reply("Phone call permission deny hua.");
+  }else if(requestCode==11){
+   if(granted){
+    String n=findContactNumber(pendingCallTarget);
+    if(n!=null&&!n.isEmpty()){
+     final String number=n;
+     new AlertDialog.Builder(this).setTitle("Call")
+      .setMessage("Call "+pendingCallTarget+"?")
+      .setNegativeButton("Cancel",null)
+      .setPositiveButton("Call",(d,w)->placeCall(number)).show();
+    }else reply("Contact nahi mila.");
+   }else reply("Contacts permission deny hua.");
+   pendingCallTarget="";
   }else if(requestCode==7&&granted){
    if(handsFree)listenForWakeWord(); else listen();
   }
