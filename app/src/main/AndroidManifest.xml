@@ -54,6 +54,24 @@
             android:foregroundServiceType="microphone" />
 
         <service
+            android:name=".BuddyVoiceInteractionService"
+            android:label="Buddy"
+            android:permission="android.permission.BIND_VOICE_INTERACTION"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.voice_interaction_service"
+                android:resource="@xml/buddy_voice_interaction_service" />
+        </service>
+
+        <service
+            android:name=".BuddyVoiceInteractionSessionService"
+            android:permission="android.permission.BIND_VOICE_INTERACTION"
+            android:exported="true" />
+
+        <service
             android:name=".BuddyNotificationService"
             android:label="Buddy notification access"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
