@@ -24,6 +24,11 @@ public class BuddyAccessibilityService extends AccessibilityService {
         if("recents".equals(action)) return performGlobalAction(GLOBAL_ACTION_RECENTS);
         if("notifications".equals(action)) return performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS);
         if("quick_settings".equals(action)) return performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS);
+        if("notifications".equals(action)) return performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS);
+        if("screenshot".equals(action) && Build.VERSION.SDK_INT>=30) return performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT);
+        if("lock".equals(action) && Build.VERSION.SDK_INT>=28) return performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN);
+        if("power".equals(action) && Build.VERSION.SDK_INT>=21) return performGlobalAction(GLOBAL_ACTION_POWER_DIALOG);
+        if("all_apps".equals(action)) return false;
         return false;
     }
 
