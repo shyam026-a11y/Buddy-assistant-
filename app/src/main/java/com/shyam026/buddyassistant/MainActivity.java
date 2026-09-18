@@ -9,6 +9,9 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.media.*;
 import android.net.Uri;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.*;
 import android.provider.Settings;
 import android.provider.ContactsContract;
@@ -239,7 +242,7 @@ public class MainActivity extends Activity {
   if(has(s,"bluetooth")){openSettings(Settings.ACTION_BLUETOOTH_SETTINGS,"Bluetooth settings");return;}
   if(has(s,"settings khol","open settings")){openSettings(Settings.ACTION_SETTINGS,"Settings");return;}
 
-  String call=extractAfter(s,"call ","phone ");if(call!=null&&!call.isEmpty()){dial(call);return;}
+  String call=extractAfter(s,"call ","phone ","dial ");if(call!=null&&!call.isEmpty()){callFlow(call);return;}
   String sms=extractAfter(s,"sms ","message ","text ");if(sms!=null&&!sms.isEmpty()){sendSmsFlow(sms);return;}
 
   String tap=extractAfter(s,"tap ","click ");if(tap!=null&&!tap.isEmpty()){if(BuddyAccessibilityService.isEnabled())ok("Tap "+tap,()->BuddyAccessibilityService.get().clickText(tap));else reply("Accessibility enable karo.");return;}
@@ -260,7 +263,50 @@ public class MainActivity extends Activity {
  private void brightness(String s){Integer p=num(s);if(p!=null){final int q=p;exec("Brightness "+q+" percent.",()->setBright(q));}else if(has(s,"kam","down"))exec("Brightness kam kar raha hoon.",()->changeBright(-20));else exec("Brightness badha raha hoon.",()->changeBright(20));}
  private void openSettings(String action,String name){exec(name+" khol raha hoon.",()->startActivity(new Intent(action)));}
  private void startHome(){Intent i=new Intent(Intent.ACTION_MAIN);i.addCategory(Intent.CATEGORY_HOME);startActivity(i);reply("Home.");}
- private void dial(String number){String n=number.replaceAll("[^0-9+]","");if(n.isEmpty()){reply("Number nahi mila.");return;}Intent i=new Intent(Intent.ACTION_DIAL,Uri.parse("tel:"+Uri.encode(n)));startActivity(i);reply("Dialer khol raha hoon.");}
+ private void callFlow(String target){
+  String raw=target==null?"":target.trim();
+  if(raw.isEmpty()){reply("Number ya contact naam nahi mila.");return;}
+  String number=raw.replaceAll("[^0-9+]","");
+  if(number.isEmpty()){
+   if(Build.VERSION.SDK_INT>=23&&checkSelfPermission(Manifest.permission.READ_CONTACTS)!=PackageManager.PERMISSION_GRANTED){
+    pendingWaContact=raw;
+    requestPermissions(new String[]{Manifest.permission.READ_CONTACTS},9);
+    reply("Contacts permission chahiye. Ek baar allow kar do.");
+    return;
+   }
+   number=findContactNumber(raw);
+  }
+  if(number==null||number.isEmpty()){reply("Contact nahi mila.");return;}
+  final String finalNumber=number;
+  new AlertDialog.Builder(this)
+   .setTitle("Call")
+   .setMessage("Call "+raw+"?")
+   .setNegativeButton("Cancel",null)
+   .setPositiveButton("Call",(d,w)->placeCall(finalNumber))
+   .show();
+ }
+
+ private void placeCall(String raw){
+  String n=raw.replaceAll("[^0-9+]","");
+  if(n.isEmpty()){reply("Valid number nahi mila.");return;}
+  if(Build.VERSION.SDK_INT>=23&&checkSelfPermission(Manifest.permission.CALL_PHONE)!=PackageManager.PERMISSION_GRANTED){
+   pendingWaMessage="CALL:"+n;
+   requestPermissions(new String[]{Manifest.permission.CALL_PHONE},10);
+   reply("Phone call permission allow kar do.");
+   return;
+  }
+  try{
+   Intent i=new Intent(Intent.ACTION_CALL,Uri.parse("tel:"+Uri.encode(n)));
+   startActivity(i);
+   reply("Calling…");
+  }catch(Exception e){
+   try{
+    Intent i=new Intent(Intent.ACTION_DIAL,Uri.parse("tel:"+Uri.encode(n)));
+    startActivity(i);
+    reply("Direct call blocked. Dialer open kar diya.");
+   }catch(Exception ignored){reply("Call start nahi hua.");}
+  }
+ }
  private void sendSmsFlow(String s){final EditText e=new EditText(this);e.setText(s);e.setHint("message text");new AlertDialog.Builder(this).setTitle("Send SMS").setMessage("Number manually enter karo. Buddy bina confirmation ke SMS nahi bhejega.").setView(e).setNegativeButton("Cancel",null).setPositiveButton("Continue",(d,w)->{final EditText n=new EditText(this);n.setHint("phone number");new AlertDialog.Builder(this).setTitle("Recipient").setView(n).setNegativeButton("Cancel",null).setPositiveButton("Send",(d2,w2)->sendSms(n.getText().toString(),e.getText().toString())).show();}).show();}
  private void sendSms(String n,String msg){try{if(Build.VERSION.SDK_INT>=23&&checkSelfPermission(Manifest.permission.SEND_SMS)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.SEND_SMS},8);return;}SmsManager.getDefault().sendTextMessage(n,null,msg,null,null);reply("SMS send kar diya.");}catch(Exception e){reply("SMS send nahi hua.");}}
  private void toggleFlash(){try{android.hardware.camera2.CameraManager cm=(android.hardware.camera2.CameraManager)getSystemService(CAMERA_SERVICE);String id=cm.getCameraIdList()[0];Boolean now=getPreferences(0).getBoolean("flash",false);cm.setTorchMode(id,!now);getPreferences(0).edit().putBoolean("flash",!now).apply();reply(!now?"Torch on.":"Torch off.");}catch(Exception e){reply("Torch control available nahi hai.");}}
@@ -271,6 +317,7 @@ public class MainActivity extends Activity {
   runOnUiThread(()->{
    buddy.setText(s);
    setState("● Ready",CYAN);
+   stopListening();
    if(ttsReady){
     try{tts.speak(s,TextToSpeech.QUEUE_FLUSH,null,"buddy-"+System.nanoTime());}
     catch(Exception ignored){resumeWakeAfterSpeech();}
@@ -356,7 +403,54 @@ public class MainActivity extends Activity {
  private void allowWrite(){startActivity(new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS,Uri.parse("package:"+getPackageName())));}
  private void web(String q){try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://www.google.com/search?q="+URLEncoder.encode(q,"UTF-8"))));}catch(Exception e){reply("Search open nahi hua.");}}
  private String battery(){Intent i=registerReceiver(null,new IntentFilter(Intent.ACTION_BATTERY_CHANGED));if(i==null)return"Battery status nahi mila.";int l=i.getIntExtra("level",-1),sc=i.getIntExtra("scale",100);return l>=0?"Battery "+Math.round(l*100f/sc)+" percent hai.":"Battery status nahi mila.";}
- private void cloud(String raw){String k=prefs.getString(KEY,"").trim();if(k.isEmpty()){reply("Ye command local mode me samajh nahi aayi. Settings me AI key add kar sakte ho.");return;}net.execute(()->{try{JSONObject body=new JSONObject();body.put("model","openrouter/free");body.put("temperature",0.2);JSONArray m=new JSONArray();m.put(new JSONObject().put("role","system").put("content","You are Buddy. Reply in one short friendly Hinglish or English sentence. Never claim device actions were completed."));m.put(new JSONObject().put("role","user").put("content",raw));body.put("messages",m);HttpURLConnection c=(HttpURLConnection)new URL("https://openrouter.ai/api/v1/chat/completions").openConnection();c.setRequestMethod("POST");c.setConnectTimeout(3500);c.setReadTimeout(7000);c.setRequestProperty("Authorization","Bearer "+k);c.setRequestProperty("Content-Type","application/json");c.setDoOutput(true);try(OutputStream o=c.getOutputStream()){o.write(body.toString().getBytes(StandardCharsets.UTF_8));}int code=c.getResponseCode();InputStream in=code>=200&&code<300?c.getInputStream():c.getErrorStream();BufferedReader br=new BufferedReader(new InputStreamReader(in,StandardCharsets.UTF_8));StringBuilder out=new StringBuilder();String line;while((line=br.readLine())!=null)out.append(line);if(code<200||code>=300){reply("Cloud AI unavailable hai.");return;}String ans=new JSONObject(out.toString()).getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content","");reply(ans.replace("\n"," ").trim());}catch(Exception e){reply("Network slow hai ya AI unavailable hai.");}});}
+ private boolean networkAvailable(){
+  ConnectivityManager cm=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);
+  Network n=cm==null?null:cm.getActiveNetwork();
+  NetworkCapabilities c=cm==null?null:cm.getNetworkCapabilities(n);
+  return c!=null&&(c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)||c.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)||c.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET));
+ }
+
+ private void cloud(String raw){
+  String k=prefs.getString(KEY,"").trim();
+  if(k.isEmpty()){reply("AI key add nahi hai.");return;}
+  if(!networkAvailable()){reply("Offline ho — local commands use karo.");return;}
+  net.execute(()->{
+   HttpURLConnection c=null;
+   try{
+    JSONObject body=new JSONObject();
+    body.put("model","openrouter/free");
+    body.put("temperature",0.1);
+    body.put("max_tokens",80);
+    JSONArray m=new JSONArray();
+    m.put(new JSONObject().put("role","system").put("content","You are Buddy. Reply in ONE short Hinglish/English sentence, maximum 12 words. Never claim device actions were completed."));
+    m.put(new JSONObject().put("role","user").put("content",raw));
+    body.put("messages",m);
+
+    c=(HttpURLConnection)new URL("https://openrouter.ai/api/v1/chat/completions").openConnection();
+    c.setRequestMethod("POST");
+    c.setConnectTimeout(1200);
+    c.setReadTimeout(3000);
+    c.setUseCaches(true);
+    c.setRequestProperty("Authorization","Bearer "+k);
+    c.setRequestProperty("Content-Type","application/json");
+    c.setRequestProperty("Accept","application/json");
+    c.setDoOutput(true);
+    try(OutputStream o=c.getOutputStream()){
+      o.write(body.toString().getBytes(StandardCharsets.UTF_8));
+    }
+    int code=c.getResponseCode();
+    if(code<200||code>=300){reply("AI response nahi aa raha.");return;}
+    InputStream in=c.getInputStream();
+    BufferedReader br=new BufferedReader(new InputStreamReader(in,StandardCharsets.UTF_8));
+    StringBuilder out=new StringBuilder(); String line;
+    while((line=br.readLine())!=null)out.append(line);
+    String ans=new JSONObject(out.toString()).getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content","");
+    reply(ans.replace("\n"," ").trim());
+   }catch(Exception e){
+    reply("AI slow hai. Local command bolo.");
+   }finally{if(c!=null)c.disconnect();}
+  });
+ }
  private void settings(){LinearLayout p=new LinearLayout(this);p.setOrientation(LinearLayout.VERTICAL);p.setPadding(dp(24),0,dp(24),0);EditText e=new EditText(this);e.setHint("OpenRouter API key");e.setSingleLine(true);e.setInputType(0x81);e.setText(prefs.getString(KEY,""));p.addView(e);Button a=btn("Accessibility settings",46,CARD2,13);a.setOnClickListener(v->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));p.addView(a);Button n=btn("Notification access",46,CARD2,13);n.setOnClickListener(v->startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")));p.addView(n);new AlertDialog.Builder(this).setTitle("Buddy Settings").setView(p).setNegativeButton("Close",null).setPositiveButton("Save",(d,w)->prefs.edit().putString(KEY,e.getText().toString().trim()).apply()).show();}
  private void setState(String s,int c){runOnUiThread(()->{if(state!=null){state.setText(s);state.setTextColor(c);}});}
  private String pretty(String s){return s.substring(0,1).toUpperCase(Locale.ROOT)+s.substring(1);}
@@ -367,12 +461,22 @@ public class MainActivity extends Activity {
 
  @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){
   super.onRequestPermissionsResult(requestCode,permissions,grantResults);
+  boolean granted=grantResults.length>0&&grantResults[0]==PackageManager.PERMISSION_GRANTED;
   if(requestCode==9){
-   if(grantResults.length>0&&grantResults[0]==PackageManager.PERMISSION_GRANTED){
-    openWhatsAppForContact(pendingWaContact,pendingWaMessage);
-   }else reply("Contacts permission deny hua, isliye contact automatically nahi mila.");
-  }else if(requestCode==7 && grantResults.length>0&&grantResults[0]==PackageManager.PERMISSION_GRANTED){
-   if(handsFree) listenForWakeWord(); else listen();
+   if(granted){
+    if(pendingWaMessage!=null&&pendingWaMessage.startsWith("CALL:")){
+     String n=findContactNumber(pendingWaContact);
+     if(n!=null)placeCall(n); else reply("Contact nahi mila.");
+     pendingWaContact=""; pendingWaMessage="";
+    }else openWhatsAppForContact(pendingWaContact,pendingWaMessage);
+   }else reply("Contacts permission deny hua.");
+  }else if(requestCode==10){
+   String callNumber=pendingWaMessage!=null&&pendingWaMessage.startsWith("CALL:")?pendingWaMessage.substring(5):"";
+   pendingWaMessage="";
+   if(granted&&!callNumber.isEmpty())placeCall(callNumber);
+   else if(!granted)reply("Phone call permission deny hua.");
+  }else if(requestCode==7&&granted){
+   if(handsFree)listenForWakeWord(); else listen();
   }
  }
 
