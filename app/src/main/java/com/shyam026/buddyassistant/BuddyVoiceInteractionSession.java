@@ -1,13 +1,16 @@
 package com.shyam026.buddyassistant;
 
+import android.content.Context;
 import android.content.Intent;
-import android.os.Bundle;
 import android.service.voice.VoiceInteractionSession;
 
 public class BuddyVoiceInteractionSession extends VoiceInteractionSession {
-    public BuddyVoiceInteractionSession(android.content.Context context){ super(context); }
+    public BuddyVoiceInteractionSession(Context context){
+        super(context);
+    }
 
-    @Override public void onHandleAssist(Bundle data){
+    @Override public void onShow(android.os.Bundle args,int showFlags){
+        super.onShow(args,showFlags);
         try{
             Intent i=new Intent(getContext(),MainActivity.class);
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
