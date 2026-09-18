@@ -186,7 +186,7 @@ public class MainActivity extends Activity {
   c.addView(opts);
   gap(c,10);
 
-  TextView foot=txt("Local controls • AI fallback • Confirmation for calls",12,MUTED,false);
+  TextView foot=txt("Local phone control • Offline-first voice • AI fallback",12,MUTED,false);
   foot.setGravity(Gravity.CENTER);
   c.addView(foot);
 
@@ -368,48 +368,11 @@ public class MainActivity extends Activity {
  private Integer num(String s){return CommandRouter.extractNumber(s);}
 
  private void command(String raw){
-  if(raw==null)return;user.setText(raw);setState("● Thinking…",CYAN);String s=norm(raw);
-  if(has(s,"hey buddy","ok buddy","hello buddy","hi buddy","namaste")){reply("Hey! Main yahin hoon. Bolo.");return;}
-  if(has(s,"time batao","what time","kitne baje","time kya")){reply(new SimpleDateFormat("hh:mm a",Locale.getDefault()).format(new Date()));return;}
-  if(has(s,"date batao","aaj ki date","today date")){reply(new SimpleDateFormat("dd MMMM yyyy",Locale.getDefault()).format(new Date()));return;}
-  if(has(s,"battery","charge kitna")){reply(battery());return;}
-
-  String ytq=CommandRouter.youtubeQuery(s);
-  if(ytq!=null&&!ytq.isEmpty()){exec("YouTube me “"+ytq+"” search kar raha hoon.",()->youtubeSearch(ytq));return;}
-
-  CommandRouter.WhatsAppRequest wa=CommandRouter.parseWhatsApp(s);
-  if(wa!=null){sendWhatsAppFlow(wa.contact,wa.message);return;}
-
-  if(has(s,"back jao","go back","back")){if(BuddyAccessibilityService.isEnabled())ok("Back",()->BuddyAccessibilityService.get().global("back"));else reply("Accessibility enable karo, tab main Back kar sakta hoon.");return;}
-  if(has(s,"home screen","go home","home jao")){if(BuddyAccessibilityService.isEnabled())ok("Home",()->BuddyAccessibilityService.get().global("home"));else startHome();return;}
-  if(has(s,"recent apps","recents")){if(BuddyAccessibilityService.isEnabled())ok("Recent apps",()->BuddyAccessibilityService.get().global("recents"));else reply("Accessibility enable karo.");return;}
-  if(has(s,"notifications kholo","notification panel","notifications")){if(BuddyAccessibilityService.isEnabled())ok("Notifications",()->BuddyAccessibilityService.get().global("notifications"));else reply("Accessibility enable karo.");return;}
-  if(has(s,"quick settings")){if(BuddyAccessibilityService.isEnabled())ok("Quick settings",()->BuddyAccessibilityService.get().global("quick_settings"));else reply("Accessibility enable karo.");return;}
-  if(has(s,"scroll down","neeche scroll","scroll neeche")){if(BuddyAccessibilityService.isEnabled())ok("Scroll down",()->BuddyAccessibilityService.get().scroll(true));else reply("Accessibility enable karo.");return;}
-  if(has(s,"scroll up","upar scroll","scroll upar")){if(BuddyAccessibilityService.isEnabled())ok("Scroll up",()->BuddyAccessibilityService.get().scroll(false));else reply("Accessibility enable karo.");return;}
-
-  if(has(s,"mute","silent","volume")){volume(s);return;}
-  if(has(s,"brightness","roshni","screen bright")){brightness(s);return;}
-  if(has(s,"wifi","wi fi","wi-fi")){openSettings(Settings.ACTION_WIFI_SETTINGS,"Wi-Fi settings");return;}
-  if(has(s,"bluetooth")){openSettings(Settings.ACTION_BLUETOOTH_SETTINGS,"Bluetooth settings");return;}
-  if(has(s,"settings khol","open settings")){openSettings(Settings.ACTION_SETTINGS,"Settings");return;}
-
-  CommandRouter.CallRequest callRequest=CommandRouter.parseCall(s);if(callRequest!=null){callFlow(callRequest.target);return;}
-  String sms=extractAfter(s,"sms ","message ","text ");if(sms!=null&&!sms.isEmpty()){sendSmsFlow(sms);return;}
-
-  String tap=extractAfter(s,"tap ","click ");if(tap!=null&&!tap.isEmpty()){if(BuddyAccessibilityService.isEnabled())ok("Tap "+tap,()->BuddyAccessibilityService.get().clickText(tap));else reply("Accessibility enable karo.");return;}
-  String type=extractAfter(s,"type ","likho ");if(type!=null&&!type.isEmpty()){if(BuddyAccessibilityService.isEnabled())ok("Text enter kar raha hoon.",()->BuddyAccessibilityService.get().typeText(type));else reply("Accessibility enable karo.");return;}
-
-  boolean open=has(s,"khol","open","launch","start","chala","run");String app=null;if(open)for(String k:apps.keySet())if(s.contains(k)){app=k;break;}
-  if(app!=null){String a=app;exec(pretty(a)+" khol raha hoon.",()->openApp(a));return;}
-
-  if(has(s,"flashlight","torch")){toggleFlash();return;}
-  if(has(s,"play music","music chala","pause music","media")){AudioManager am=(AudioManager)getSystemService(AUDIO_SERVICE);am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));reply("Media control.");return;}
-
-  String q=search(s);if(q!=null){exec("Google search khol raha hoon.",()->web(q));return;}
-  cloud(raw);
+  if(raw==null||raw.trim().isEmpty())return;
+  user.setText(raw);
+  setState("● Thinking…",CYAN);
+  CommandEngine.execute(this,raw,msg->reply(msg));
  }
-
  private String extractAfter(String s,String...p){for(String x:p)if(s.startsWith(x))return s.substring(x.length()).trim();return null;}
  private void volume(String s){AudioManager a=(AudioManager)getSystemService(AUDIO_SERVICE);Integer p=num(s);if(has(s,"mute","silent"))exec("Volume mute kar diya.",()->a.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_MUTE,AudioManager.FLAG_SHOW_UI));else if(p!=null){int v=Math.round(a.getStreamMaxVolume(AudioManager.STREAM_MUSIC)*p/100f);exec("Volume "+p+" percent.",()->a.setStreamVolume(AudioManager.STREAM_MUSIC,Math.max(0,Math.min(a.getStreamMaxVolume(AudioManager.STREAM_MUSIC),v)),AudioManager.FLAG_SHOW_UI));}else if(has(s,"kam","down","decrease"))exec("Volume kam kar diya.",()->a.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_LOWER,AudioManager.FLAG_SHOW_UI));else exec("Volume badha diya.",()->a.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_RAISE,AudioManager.FLAG_SHOW_UI));}
  private void brightness(String s){Integer p=num(s);if(p!=null){final int q=p;exec("Brightness "+q+" percent.",()->setBright(q));}else if(has(s,"kam","down"))exec("Brightness kam kar raha hoon.",()->changeBright(-20));else exec("Brightness badha raha hoon.",()->changeBright(20));}
