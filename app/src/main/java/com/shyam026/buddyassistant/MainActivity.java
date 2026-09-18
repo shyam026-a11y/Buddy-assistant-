@@ -138,10 +138,7 @@ public class MainActivity extends Activity {
   commands.setPadding(dp(16),dp(14),dp(16),dp(14));
   commands.setBackground(bg(CARD,18));
   commands.addView(txt("TRY SAYING",11,MUTED,true));
-  commands.addView(txt("• “YouTube kholo”
-• “volume 60”
-• “brightness 40”
-• “search JEE physics”",14,WHITE,false));
+  commands.addView(txt("YouTube kholo\nvolume 60\nbrightness 40\nsearch JEE physics",14,WHITE,false));
   c.addView(commands);
   gap(c,14);
 
