@@ -75,7 +75,7 @@ public class MainActivity extends Activity {
   LinearLayout access=new LinearLayout(this);access.setOrientation(LinearLayout.VERTICAL);access.setPadding(dp(14),dp(12),dp(14),dp(12));access.setBackground(bg(CARD,16));
   access.addView(txt("DEVICE CONTROL",11,MUTED,true));accessLabel=txt(accessText(),14,WHITE,false);access.addView(accessLabel);Button ae=btn("Enable phone control",44,CARD2,13);ae.setOnClickListener(v->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));access.addView(ae);c.addView(access);gap(c,12);
 
-  LinearLayout opts=new LinearLayout(this);Switch sw=new Switch(this);sw.setText("Hey Buddy wake mode");sw.setTextColor(WHITE);sw.setTextSize(14);sw.setOnCheckedChangeListener((v,x)->{handsFree=x;if(x){stopTts();listenForWakeWord();}else{listenMode=ListenMode.OFF;stopListening();setState("● Ready",CYAN);}});opts.addView(sw,new LinearLayout.LayoutParams(0,-2,1));
+  LinearLayout opts=new LinearLayout(this);Switch sw=new Switch(this);sw.setText("Hey Buddy wake mode (app open)");sw.setTextColor(WHITE);sw.setTextSize(14);sw.setOnCheckedChangeListener((v,x)->{handsFree=x;if(x){stopTts();listenForWakeWord();}else{listenMode=ListenMode.OFF;stopListening();setState("● Ready",CYAN);}});opts.addView(sw,new LinearLayout.LayoutParams(0,-2,1));
   Button set=btn("Settings",46,CARD2,14);set.setOnClickListener(v->settings());opts.addView(set);c.addView(opts);gap(c,12);
   TextView foot=txt("Local first • AI fallback • Wake mode listens only for “Hey Buddy”",12,MUTED,false);foot.setGravity(Gravity.CENTER);c.addView(foot);
   setContentView(root);initSpeech();
@@ -164,6 +164,7 @@ public class MainActivity extends Activity {
  }
 
  private void listen(){
+  suppressRecognizerCallbacks=false;
   stopTts();
   if(Build.VERSION.SDK_INT>=23&&checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){
    requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},7);
@@ -176,11 +177,13 @@ public class MainActivity extends Activity {
   i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,lang);
   i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS,5);
   i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS,false);
+  i.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE,true);
   try{sr.startListening(i);}catch(Exception e){listening=false;setState("● Mic busy",Color.RED);}
  }
 
  private void listenForWakeWord(){
   if(!handsFree||speaking)return;
+  suppressRecognizerCallbacks=false;
   stopTts();
   if(Build.VERSION.SDK_INT>=23&&checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){
    requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},7);
@@ -202,7 +205,7 @@ public class MainActivity extends Activity {
   if(sr!=null){
    suppressRecognizerCallbacks=true;
    try{sr.cancel();}catch(Exception ignored){}
-   mic.postDelayed(()->suppressRecognizerCallbacks=false,350);
+   // Keep callbacks suppressed until the next explicit listen() / wake-listen start.
   }
   listening=false;
   mic.setText("🎙  TAP TO TALK");
@@ -251,7 +254,7 @@ public class MainActivity extends Activity {
   if(has(s,"bluetooth")){openSettings(Settings.ACTION_BLUETOOTH_SETTINGS,"Bluetooth settings");return;}
   if(has(s,"settings khol","open settings")){openSettings(Settings.ACTION_SETTINGS,"Settings");return;}
 
-  String call=extractAfter(s,"call ","phone ","dial ");if(call!=null&&!call.isEmpty()){callFlow(call);return;}
+  CommandRouter.CallRequest callRequest=CommandRouter.parseCall(s);if(callRequest!=null){callFlow(callRequest.target);return;}
   String sms=extractAfter(s,"sms ","message ","text ");if(sms!=null&&!sms.isEmpty()){sendSmsFlow(sms);return;}
 
   String tap=extractAfter(s,"tap ","click ");if(tap!=null&&!tap.isEmpty()){if(BuddyAccessibilityService.isEnabled())ok("Tap "+tap,()->BuddyAccessibilityService.get().clickText(tap));else reply("Accessibility enable karo.");return;}
