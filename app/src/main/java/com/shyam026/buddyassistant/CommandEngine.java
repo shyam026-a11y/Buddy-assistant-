@@ -476,8 +476,10 @@ public final class CommandEngine {
         query = query.trim();
 
         if (query.isEmpty()) {
-            if (media(c, KeyEvent.KEYCODE_MEDIA_PLAY)) {
-                done(c, cb, "Music play command bhej diya.");
+            AudioManager am = (AudioManager) c.getSystemService(Context.AUDIO_SERVICE);
+            if (am != null && am.isMusicActive()
+                    && media(c, KeyEvent.KEYCODE_MEDIA_PLAY)) {
+                done(c, cb, "Music resume command bhej diya.");
                 return;
             }
 
