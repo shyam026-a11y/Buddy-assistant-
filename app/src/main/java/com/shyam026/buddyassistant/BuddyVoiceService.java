@@ -294,23 +294,7 @@ public class BuddyVoiceService extends Service {
                             return;
                         }
 
-                        String remainder = CommandRouter.removeWakePhrase(command);
-                        if (remainder == null) {
-                            scheduleWakeRecognition(180L);
-                            return;
-                        }
-
-                        wakeRetryCount = 0;
-
-                        if (remainder.trim().isEmpty()) {
-                            mode = Mode.COMMAND;
-                            announce(STATE_PROCESSING, command,
-                                    "Haan. Bolo.");
-                            handler.postDelayed(
-                                    BuddyVoiceService.this::startRecognition, 120L);
-                        } else {
-                            executeCommand(remainder);
-                        }
+                        handleWakeTranscript(command);
                         return;
                     }
 
@@ -348,6 +332,36 @@ public class BuddyVoiceService extends Service {
     }
 
     private static final Object WAKE_RECOGNITION_TOKEN = new Object();
+
+    private void handleWakeTranscript(String command) {
+        if (command == null || command.trim().isEmpty()) {
+            scheduleWakeRecognition(180L);
+            return;
+        }
+
+        String remainder =
+                CommandRouter.removeWakePhrase(command);
+
+        if (remainder == null) {
+            scheduleWakeRecognition(180L);
+            return;
+        }
+
+        wakeRetryCount = 0;
+
+        if (remainder.trim().isEmpty()) {
+            mode = Mode.COMMAND;
+            announce(
+                    STATE_PROCESSING,
+                    command,
+                    "Haan. Bolo.");
+            handler.postDelayed(
+                    BuddyVoiceService.this::startRecognition,
+                    120L);
+        } else {
+            executeCommand(remainder);
+        }
+    }
 
     private void startWakeRecognition() {
         if (stopping
