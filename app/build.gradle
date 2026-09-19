@@ -8,8 +8,8 @@ android {
         applicationId "com.shyam026.buddyassistant"
         minSdk 23
         targetSdk 35
-        versionCode 4
-        versionName "2.2-StableVoice"
+        versionCode 5
+        versionName "3.0-BuddyCore"
     }
 
     testOptions { unitTests.returnDefaultValues = true }
@@ -19,7 +19,6 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 }
-
 
 dependencies {
     testImplementation "junit:junit:4.13.2"

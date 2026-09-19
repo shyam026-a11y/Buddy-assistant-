@@ -3,14 +3,15 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
-    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
 
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <queries>
         <intent><action android:name="android.speech.RecognitionService" /></intent>
@@ -26,13 +27,16 @@
 
     <application
         android:theme="@style/BuddyTheme"
-        android:label="Buddy"
+        android:label="@string/app_name"
         android:icon="@drawable/buddy_logo"
         android:roundIcon="@drawable/buddy_logo"
         android:allowBackup="false"
         android:supportsRtl="true">
 
-        <activity android:name=".MainActivity" android:screenOrientation="portrait" android:exported="true">
+        <activity
+            android:name=".MainActivity"
+            android:screenOrientation="portrait"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -45,8 +49,7 @@
             android:label="@string/accessibility_service_label"
             android:exported="true">
             <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
+            <meta-data android:name="android.accessibilityservice"
                 android:resource="@xml/buddy_accessibility_config" />
         </service>
 
@@ -57,14 +60,11 @@
 
         <service
             android:name=".BuddyVoiceInteractionService"
-            android:label="Buddy"
+            android:label="@string/app_name"
             android:permission="android.permission.BIND_VOICE_INTERACTION"
             android:exported="true">
-            <intent-filter>
-                <action android:name="android.service.voice.VoiceInteractionService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.voice_interaction_service"
+            <intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter>
+            <meta-data android:name="android.voice_interaction_service"
                 android:resource="@xml/buddy_voice_interaction_service" />
         </service>
 
@@ -77,7 +77,7 @@
             android:name=".BuddyNotificationService"
             android:label="Buddy notification access"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
-            android:exported="false">
+            android:exported="true">
             <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
         </service>
     </application>

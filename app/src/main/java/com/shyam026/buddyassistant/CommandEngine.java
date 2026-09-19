@@ -1,338 +1,610 @@
 package com.shyam026.buddyassistant;
 
 import android.Manifest;
-import android.app.*;
-import android.content.*;
+import android.app.Activity;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.graphics.SurfaceTexture;
-import android.hardware.camera2.CameraCharacteristics;
-import android.hardware.camera2.CameraManager;
-import android.media.*;
-import android.view.KeyEvent;
-import android.net.Uri;
-import android.os.*;
-import android.provider.ContactsContract;
-import android.provider.Settings;
-import android.speech.tts.TextToSpeech;
-import android.telephony.SmsManager;
 import android.database.Cursor;
-import java.io.*;
-import java.net.*;
+import android.media.AudioManager;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.AlarmClock;
+import android.provider.CalendarContract;
+import android.provider.ContactsContract;
+import android.provider.MediaStore;
+import android.provider.Settings;
+import android.view.KeyEvent;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
-import java.util.*;
-import java.util.concurrent.*;
-
-import org.json.*;
+import java.util.Date;
+import java.util.Locale;
 
 public final class CommandEngine {
     public interface Callback { void onResult(String message); }
-    private static final String PREF="buddy_prefs", KEY="openrouter_key";
-    private CommandEngine(){}
 
-    public static void execute(Context context,String raw,Callback callback){
-        Context c=context.getApplicationContext();
-        String s=CommandRouter.normalize(raw);
-        if(s.isEmpty()){done(c,callback,"Bolo, command clear nahi mila.");return;}
+    private static final String PREF = "buddy_prefs";
+    private static final String AI_KEY = "openrouter_key";
 
-        try{
-            if(has(s,"hey buddy","ok buddy","hello buddy","hi buddy","namaste")){
-                done(c,callback,"Haan, main yahin hoon.");
+    private CommandEngine() {}
+
+    public static void execute(Context context, String raw, Callback callback) {
+        Context c = context.getApplicationContext();
+        String s = CommandRouter.normalize(raw);
+        if (s.isEmpty()) {
+            done(c, callback, "Bolo, command clear nahi mila.");
+            return;
+        }
+
+        try {
+            if (has(s, "hey buddy", "hello buddy", "hi buddy", "namaste buddy")) {
+                done(c, callback, "Haan, main yahin hoon.");
                 return;
             }
-            if(has(s,"time batao","what time","kitne baje","time kya")){
-                done(c,callback,new SimpleDateFormat("hh:mm a",Locale.getDefault()).format(new Date()));
+
+            if (has(s, "time batao", "what time", "kitne baje", "time kya", "current time")) {
+                done(c, callback, new SimpleDateFormat("hh:mm a", Locale.getDefault()).format(new Date()));
                 return;
             }
-            if(has(s,"date batao","aaj ki date","today date")){
-                done(c,callback,new SimpleDateFormat("dd MMMM yyyy",Locale.getDefault()).format(new Date()));
+
+            if (has(s, "date batao", "aaj ki date", "today date", "what date", "today")) {
+                done(c, callback, new SimpleDateFormat("dd MMMM yyyy", Locale.getDefault()).format(new Date()));
                 return;
             }
-            if(has(s,"battery","charge kitna")){
-                done(c,callback,battery(c)); return;
+
+            if (has(s, "battery", "charge kitna", "battery kitni")) {
+                done(c, callback, battery(c));
+                return;
+            }
+
+            String remember = CommandRouter.memoryText(raw);
+            if (remember != null) {
+                BuddyMemory.remember(c, remember);
+                done(c, callback, "Yaad rakh liya.");
+                return;
+            }
+
+            if (has(s, "what did you remember", "last memory", "maine kya yaad karaya", "yaad kya hai")) {
+                String memory = BuddyMemory.getLastMemory(c);
+                done(c, callback, memory.isEmpty() ? "Abhi kuch saved nahi hai." : memory);
+                return;
+            }
+
+            if (has(s, "forget that", "forget memory", "sab bhool jao", "memory clear")) {
+                BuddyMemory.clear(c);
+                done(c, callback, "Saved memory clear kar di.");
+                return;
+            }
+
+            if (has(s, "last notification", "latest notification", "notification padh", "notification batao")) {
+                String notification = BuddyNotificationService.getLastNotification();
+                done(c, callback, notification.isEmpty()
+                        ? "Koi recent notification available nahi hai."
+                        : notification);
+                BuddyNotificationService.clearLastNotification();
+                return;
             }
 
             String yt = CommandRouter.youtubeQuery(s);
             if (yt != null && !yt.isEmpty()) {
-                Intent youtubeIntent = new Intent(
-                        Intent.ACTION_VIEW,
+                Intent i = new Intent(Intent.ACTION_VIEW,
                         Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(yt)));
-                youtubeIntent.setPackage("com.google.android.youtube");
-
-                boolean opened = launch(c, youtubeIntent, "YouTube search");
+                i.setPackage("com.google.android.youtube");
+                boolean opened = launch(c, i);
                 if (!opened) {
-                    opened = launch(
-                            c,
-                            new Intent(
-                                    Intent.ACTION_VIEW,
-                                    Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(yt))),
-                            "YouTube search");
+                    opened = launch(c, new Intent(Intent.ACTION_VIEW,
+                            Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(yt))));
                 }
-
                 done(c, callback, opened
                         ? "YouTube par " + yt + " search kar raha hoon."
                         : "YouTube search open nahi hua.");
                 return;
             }
 
-            CommandRouter.WhatsAppRequest wa=CommandRouter.parseWhatsApp(s);
-            if(wa!=null){
-                String number=findContactNumber(c,wa.contact);
-                if(number==null){done(c,callback,"Contact nahi mila: "+wa.contact);return;}
-                String phone=formatWhatsAppNumber(number);
-                Intent i=new Intent(Intent.ACTION_VIEW,Uri.parse("whatsapp://send?phone="+phone+"&text="+Uri.encode(wa.message)));
-                i.setPackage("com.whatsapp");
-                if(!launch(c,i,"WhatsApp")) {
-                    i=new Intent(Intent.ACTION_VIEW,Uri.parse("https://wa.me/"+phone+"?text="+Uri.encode(wa.message)));
-                    if(!launch(c,i,"WhatsApp")){done(c,callback,"WhatsApp open nahi hua.");return;}
-                }
-                done(c,callback,"WhatsApp chat ready hai. Send tap kar dena.");
-                return;
-            }
-
-            if(has(s,"back jao","go back","back")){global(c,"back",callback);return;}
-            if(has(s,"home screen","go home","home jao")){global(c,"home",callback);return;}
-            if(has(s,"recent apps","recents")){global(c,"recents",callback);return;}
-            if(has(s,"notifications kholo","notification panel","notifications")){global(c,"notifications",callback);return;}
-            if(has(s,"quick settings")){global(c,"quick_settings",callback);return;}
-            if(has(s,"screenshot","screen shot","screen capture")){global(c,"screenshot",callback);return;}
-            if(has(s,"lock phone","lock screen","phone lock")){global(c,"lock",callback);return;}
-            if(has(s,"power menu","power button menu")){global(c,"power",callback);return;}
-            if(has(s,"all apps","app drawer")){global(c,"all_apps",callback);return;}
-
-            if(has(s,"scroll down","neeche scroll","scroll neeche")){boolean r=accessScroll(c,true);done(c,callback,r?"Neeche scroll kar diya.":"Scroll nahi ho paya.");return;}
-            if(has(s,"scroll up","upar scroll","scroll upar")){boolean r=accessScroll(c,false);done(c,callback,r?"Upar scroll kar diya.":"Scroll nahi ho paya.");return;}
-
-            String tap=after(s,"tap ","click ");
-            if(tap!=null&&!tap.isEmpty()){
-                boolean r=accessClick(c,tap);done(c,callback,r?"“"+tap+"” click kar diya.":"“"+tap+"” nahi mila.");return;
-            }
-            String type=after(s,"type ","likho ");
-            if(type!=null&&!type.isEmpty()){
-                boolean r=accessType(c,type);done(c,callback,r?"Text enter kar diya.":"Editable field nahi mila.");return;
-            }
-
-            if(has(s,"mute","silent","volume")){doVolume(c,s,callback);return;}
-            if(has(s,"brightness","roshni","screen bright")){doBrightness(c,s,callback);return;}
-            if(has(s,"flashlight","torch")){toggleFlash(c,callback);return;}
-
-            if(has(s,"turn on wifi","wifi on","wifi chalu","wifi band","turn off wifi","wi fi")){
-                if(has(s,"on","chalu")){boolean r=quickToggle(c,"Wi-Fi");done(c,callback,r?"Wi-Fi toggle kar diya.":"Wi-Fi controls open nahi hue.");}
-                else if(has(s,"off","band")){boolean r=quickToggle(c,"Wi-Fi");done(c,callback,r?"Wi-Fi toggle kar diya.":"Wi-Fi controls open nahi hue.");}
-                else settings(c,Settings.ACTION_WIFI_SETTINGS,"Wi-Fi settings",callback);
-                return;
-            }
-            if(has(s,"bluetooth on","bluetooth chalu","bluetooth off","bluetooth band","bluetooth")){
-                if(has(s,"on","chalu")||has(s,"off","band")){boolean r=quickToggle(c,"Bluetooth");done(c,callback,r?"Bluetooth toggle kar diya.":"Bluetooth controls open nahi hue.");}
-                else settings(c,Settings.ACTION_BLUETOOTH_SETTINGS,"Bluetooth settings",callback);
-                return;
-            }
-            if(has(s,"settings khol","open settings")){settings(c,Settings.ACTION_SETTINGS,"Settings",callback);return;}
-
-            CommandRouter.CallRequest call=CommandRouter.parseCall(s);
-            if(call!=null){doCall(c,call.target,callback);return;}
-
-            CommandRouter.SmsRequest sms=CommandRouter.parseSms(s);
-            if(sms!=null){doSms(c,sms.target,sms.message,callback);return;}
-
-            boolean open=has(s,"khol","open","launch","start","chala","run");
-            if(open){
-                String app=null;
-                String[][] apps={{"youtube","com.google.android.youtube"},{"chrome","com.android.chrome"},{"whatsapp","com.whatsapp"},{"instagram","com.instagram.android"},{"spotify","com.spotify.music"},{"telegram","org.telegram.messenger"},{"maps","com.google.android.apps.maps"},{"gmail","com.google.android.gm"},{"calculator","com.google.android.calculator"},{"camera","com.android.camera"}};
-                for(String[] a:apps)if(s.contains(a[0])){app=a[0];break;}
-                if(app!=null){
-                    String pretty=app.substring(0,1).toUpperCase(Locale.ROOT)+app.substring(1);
-                    Intent i=c.getPackageManager().getLaunchIntentForPackage(packageFor(app,apps));
-                    if(i!=null&&launch(c,i,pretty)){done(c,callback,pretty+" khol raha hoon.");}
-                    else done(c,callback,pretty+" app nahi mila.");
+            CommandRouter.WhatsAppRequest wa = CommandRouter.parseWhatsApp(s);
+            if (wa != null) {
+                String number = findContactNumber(c, wa.contact);
+                if (number == null) {
+                    done(c, callback, "Contact nahi mila: " + wa.contact);
                     return;
                 }
-            }
-
-            if(has(s,"play music","music chala","pause music","media")){
-                AudioManager am=(AudioManager)c.getSystemService(Context.AUDIO_SERVICE);
-                am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));
-                am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));
-                done(c,callback,"Media control.");
+                String phone = formatWhatsAppNumber(number);
+                Intent i = new Intent(Intent.ACTION_VIEW,
+                        Uri.parse("whatsapp://send?phone=" + phone + "&text=" + Uri.encode(wa.message)));
+                i.setPackage("com.whatsapp");
+                boolean opened = launch(c, i);
+                if (!opened) {
+                    opened = launch(c, new Intent(Intent.ACTION_VIEW,
+                            Uri.parse("https://wa.me/" + phone + "?text=" + Uri.encode(wa.message))));
+                }
+                done(c, callback, opened
+                        ? "WhatsApp message ready hai. Send tum confirm karna."
+                        : "WhatsApp open nahi hua.");
                 return;
             }
 
-            String q=CommandRouter.googleSearchQuery(s);
-            if(q!=null&&!q.isEmpty()){
-                Intent i=new Intent(Intent.ACTION_VIEW,Uri.parse("https://www.google.com/search?q="+Uri.encode(q)));
-                if(launch(c,i,"Google search"))done(c,callback,"Google par "+q+" search kar raha hoon.");
-                else done(c,callback,"Search open nahi hua.");
+            if (has(s, "back jao", "go back", "back")) {
+                global(c, "back", callback);
+                return;
+            }
+            if (has(s, "home screen", "go home", "home jao", "home")) {
+                global(c, "home", callback);
+                return;
+            }
+            if (has(s, "recent apps", "recents")) {
+                global(c, "recents", callback);
+                return;
+            }
+            if (has(s, "notifications kholo", "notification panel", "notifications")) {
+                global(c, "notifications", callback);
+                return;
+            }
+            if (has(s, "quick settings")) {
+                global(c, "quick_settings", callback);
+                return;
+            }
+            if (has(s, "screenshot", "screen shot", "screen capture")) {
+                global(c, "screenshot", callback);
+                return;
+            }
+            if (has(s, "lock phone", "lock screen", "phone lock")) {
+                global(c, "lock", callback);
                 return;
             }
 
-            cloud(c,raw,callback);
-        }catch(Throwable t){
-            done(c,callback,"Command fail hua. Dobara bolo.");
-        }
-    }
-
-    private static boolean has(String s,String...xs){for(String x:xs)if(s.contains(x))return true;return false;}
-    private static String after(String s,String...prefixes){for(String p:prefixes)if(s.startsWith(p))return s.substring(p.length()).trim();return null;}
-    private static void done(Context c,Callback cb,String msg){if(cb==null)return;new Handler(Looper.getMainLooper()).post(()->cb.onResult(msg));}
-
-    private static void settings(Context c,String action,String name,Callback cb){
-        boolean ok=launch(c,new Intent(action),name);
-        done(c,cb,ok?name+" khol raha hoon.":name+" open nahi hua.");
-    }
-
-    private static void global(Context c,String action,Callback cb){
-        if(BuddyAccessibilityService.isEnabled()){
-            boolean ok=BuddyAccessibilityService.get().global(action);
-            done(c,cb,ok?actionText(action)+" done.":actionText(action)+" nahi hua.");
-        }else{
-            if("home".equals(action)){
-                boolean ok=launch(c,new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),"Home");
-                done(c,cb,ok?"Home.":"Home open nahi hua.");
-            }else done(c,cb,"Phone control ke liye Accessibility enable karo.");
-        }
-    }
-
-    private static String actionText(String a){
-        if("quick_settings".equals(a))return "Quick settings";
-        if("all_apps".equals(a))return "App drawer";
-        if("screenshot".equals(a))return "Screenshot";
-        if("lock".equals(a))return "Lock";
-        if("power".equals(a))return "Power menu";
-        if("notifications".equals(a))return "Notifications";
-        if("recents".equals(a))return "Recent apps";
-        return "Back";
-    }
-
-    private static boolean accessScroll(Context c,boolean down){return BuddyAccessibilityService.isEnabled()&&BuddyAccessibilityService.get().scroll(down);}
-    private static boolean accessClick(Context c,String t){return BuddyAccessibilityService.isEnabled()&&BuddyAccessibilityService.get().clickText(t);}
-    private static boolean accessType(Context c,String t){return BuddyAccessibilityService.isEnabled()&&BuddyAccessibilityService.get().typeText(t);}
-
-    private static void doVolume(Context c,String s,Callback cb){
-        AudioManager a=(AudioManager)c.getSystemService(Context.AUDIO_SERVICE);
-        Integer p=CommandRouter.extractNumber(s);
-        if(has(s,"mute","silent")){a.setStreamVolume(AudioManager.STREAM_MUSIC,0,AudioManager.FLAG_SHOW_UI);done(c,cb,"Volume mute.");}
-        else if(p!=null){int v=Math.round(a.getStreamMaxVolume(AudioManager.STREAM_MUSIC)*p/100f);a.setStreamVolume(AudioManager.STREAM_MUSIC,Math.max(0,Math.min(a.getStreamMaxVolume(AudioManager.STREAM_MUSIC),v)),AudioManager.FLAG_SHOW_UI);done(c,cb,"Volume "+p+" percent.");}
-        else if(has(s,"kam","down","decrease")){a.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_LOWER,AudioManager.FLAG_SHOW_UI);done(c,cb,"Volume kam kar diya.");}
-        else {a.adjustStreamVolume(AudioManager.STREAM_MUSIC,AudioManager.ADJUST_RAISE,AudioManager.FLAG_SHOW_UI);done(c,cb,"Volume badha diya.");}
-    }
-
-    private static void doBrightness(Context c,String s,Callback cb){
-        Integer p=CommandRouter.extractNumber(s);
-        try{
-            if(!Settings.System.canWrite(c)){launch(c,new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS,Uri.parse("package:"+c.getPackageName())),"Brightness permission");done(c,cb,"Brightness permission allow karo.");return;}
-            if(p!=null){Settings.System.putInt(c.getContentResolver(),Settings.System.SCREEN_BRIGHTNESS,Math.max(1,Math.min(100,p))*255/100);done(c,cb,"Brightness "+p+" percent.");}
-            else{
-                int d=has(s,"kam","down")?-20:20;
-                int cur=Settings.System.getInt(c.getContentResolver(),Settings.System.SCREEN_BRIGHTNESS,128);
-                Settings.System.putInt(c.getContentResolver(),Settings.System.SCREEN_BRIGHTNESS,Math.max(1,Math.min(255,cur+(255*d/100))));
-                done(c,cb,d<0?"Brightness kam kar diya.":"Brightness badha diya.");
+            if (has(s, "scroll down", "neeche scroll", "scroll neeche")) {
+                done(c, callback, accessScroll(true) ? "Neeche scroll kar diya." : "Scroll nahi ho paya.");
+                return;
             }
-        }catch(Throwable t){done(c,cb,"Brightness control nahi hua.");}
-    }
+            if (has(s, "scroll up", "upar scroll", "scroll upar")) {
+                done(c, callback, accessScroll(false) ? "Upar scroll kar diya." : "Scroll nahi ho paya.");
+                return;
+            }
 
-    private static void toggleFlash(Context c,Callback cb){
-        try{
-            CameraManager cm=(CameraManager)c.getSystemService(Context.CAMERA_SERVICE);
-            for(String id:cm.getCameraIdList()){
-                CameraCharacteristics ch=cm.getCameraCharacteristics(id);
-                Boolean back=ch.get(CameraCharacteristics.LENS_FACING)==CameraCharacteristics.LENS_FACING_BACK;
-                Boolean flash=ch.get(CameraCharacteristics.FLASH_INFO_AVAILABLE);
-                if(Boolean.TRUE.equals(back)&&Boolean.TRUE.equals(flash)){
-                    boolean now=c.getSharedPreferences(PREF,0).getBoolean("flash",false);
-                    cm.setTorchMode(id,!now);
-                    c.getSharedPreferences(PREF,0).edit().putBoolean("flash",!now).apply();
-                    done(c,cb,!now?"Torch on.":"Torch off.");return;
+            String tap = after(s, "tap ", "click ");
+            if (tap != null && !tap.isEmpty()) {
+                boolean r = BuddyAccessibilityService.isEnabled()
+                        && BuddyAccessibilityService.get().clickText(tap);
+                done(c, callback, r ? "“" + tap + "” click kar diya." : "“" + tap + "” nahi mila.");
+                return;
+            }
+
+            String type = after(s, "type ", "likho ");
+            if (type != null && !type.isEmpty()) {
+                boolean r = BuddyAccessibilityService.isEnabled()
+                        && BuddyAccessibilityService.get().typeText(type);
+                done(c, callback, r ? "Text enter kar diya." : "Editable field nahi mila.");
+                return;
+            }
+
+            if (has(s, "volume", "mute", "silent")) {
+                doVolume(c, s, callback);
+                return;
+            }
+
+            if (has(s, "brightness", "roshni", "screen bright")) {
+                doBrightness(c, s, callback);
+                return;
+            }
+
+            if (has(s, "flashlight", "torch")) {
+                toggleFlash(c, callback);
+                return;
+            }
+
+            if (has(s, "wifi on", "wifi chalu", "wifi off", "wifi band", "wi fi")) {
+                openWirelessSettings(c, Settings.ACTION_WIFI_SETTINGS, "Wi-Fi", callback);
+                return;
+            }
+
+            if (has(s, "bluetooth on", "bluetooth chalu", "bluetooth off", "bluetooth band", "bluetooth")) {
+                openWirelessSettings(c, Settings.ACTION_BLUETOOTH_SETTINGS, "Bluetooth", callback);
+                return;
+            }
+
+            if (has(s, "settings khol", "open settings", "settings")) {
+                openSettings(c, callback);
+                return;
+            }
+
+            if (has(s, "camera kholo", "open camera", "camera open")) {
+                boolean ok = launch(c, new Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA));
+                done(c, callback, ok ? "Camera khol diya." : "Camera open nahi hua.");
+                return;
+            }
+
+            if (has(s, "set timer", "timer lagao", "timer")) {
+                Integer seconds = CommandRouter.extractNumber(s);
+                if (seconds == null) {
+                    done(c, callback, "Timer duration batao, jaise 10 minutes.");
+                } else {
+                    Intent i = new Intent(AlarmClock.ACTION_SET_TIMER)
+                            .putExtra(AlarmClock.EXTRA_LENGTH, Math.min(86400, seconds * 60))
+                            .putExtra(AlarmClock.EXTRA_SKIP_UI, false);
+                    done(c, callback, launch(c, i) ? "Timer screen ready hai." : "Timer open nahi hua.");
+                }
+                return;
+            }
+
+            if (has(s, "set alarm", "alarm lagao", "alarm")) {
+                Integer hour = CommandRouter.extractNumber(s);
+                if (hour == null || hour > 23) {
+                    done(c, callback, "Alarm ka time batao, jaise 7.");
+                } else {
+                    Intent i = new Intent(AlarmClock.ACTION_SET_ALARM)
+                            .putExtra(AlarmClock.EXTRA_HOUR, hour)
+                            .putExtra(AlarmClock.EXTRA_MINUTES, 0)
+                            .putExtra(AlarmClock.EXTRA_SKIP_UI, false);
+                    done(c, callback, launch(c, i) ? "Alarm screen ready hai." : "Alarm open nahi hua.");
+                }
+                return;
+            }
+
+            if (has(s, "next song", "next track", "agla gana")) {
+                media(c, KeyEvent.KEYCODE_MEDIA_NEXT);
+                done(c, callback, "Next track.");
+                return;
+            }
+            if (has(s, "previous song", "previous track", "pichla gana")) {
+                media(c, KeyEvent.KEYCODE_MEDIA_PREVIOUS);
+                done(c, callback, "Previous track.");
+                return;
+            }
+            if (has(s, "pause music", "music pause")) {
+                media(c, KeyEvent.KEYCODE_MEDIA_PAUSE);
+                done(c, callback, "Music pause.");
+                return;
+            }
+            if (has(s, "play music", "music chala", "music play", "resume music")) {
+                media(c, KeyEvent.KEYCODE_MEDIA_PLAY);
+                done(c, callback, "Music play.");
+                return;
+            }
+
+            CommandRouter.CallRequest call = CommandRouter.parseCall(s);
+            if (call != null) {
+                doCall(c, call.target, callback);
+                return;
+            }
+
+            CommandRouter.SmsRequest sms = CommandRouter.parseSms(s);
+            if (sms != null) {
+                doSms(c, sms.target, sms.message, callback);
+                return;
+            }
+
+            if (has(s, "calendar event", "calendar mein", "calendar me", "create event")) {
+                Intent i = new Intent(Intent.ACTION_INSERT)
+                        .setData(CalendarContract.Events.CONTENT_URI)
+                        .putExtra(CalendarContract.Events.TITLE, "Buddy event");
+                done(c, callback, launch(c, i) ? "Calendar event screen ready hai." : "Calendar open nahi hua.");
+                return;
+            }
+
+            if (has(s, "open", "khol", "launch", "start", "chala")) {
+                String[][] apps = {
+                        {"youtube", "com.google.android.youtube"},
+                        {"chrome", "com.android.chrome"},
+                        {"whatsapp", "com.whatsapp"},
+                        {"instagram", "com.instagram.android"},
+                        {"spotify", "com.spotify.music"},
+                        {"telegram", "org.telegram.messenger"},
+                        {"maps", "com.google.android.apps.maps"},
+                        {"gmail", "com.google.android.gm"},
+                        {"calculator", "com.google.android.calculator"}
+                };
+                for (String[] a : apps) {
+                    if (s.contains(a[0])) {
+                        Intent i = c.getPackageManager().getLaunchIntentForPackage(a[1]);
+                        boolean ok = i != null && launch(c, i);
+                        done(c, callback, ok ? cap(a[0]) + " khol diya." : cap(a[0]) + " app nahi mila.");
+                        return;
+                    }
                 }
             }
-        }catch(Throwable ignored){}
-        done(c,cb,"Torch control available nahi hai.");
+
+            String q = CommandRouter.googleSearchQuery(s);
+            if (q != null && !q.isEmpty()) {
+                boolean ok = launch(c, new Intent(Intent.ACTION_VIEW,
+                        Uri.parse("https://www.google.com/search?q=" + Uri.encode(q))));
+                done(c, callback, ok ? "Google par search kar raha hoon." : "Search open nahi hua.");
+                return;
+            }
+
+            cloud(c, raw, callback);
+        } catch (Throwable t) {
+            done(c, callback, "Command fail hua. Dobara bolo.");
+        }
     }
 
-    private static boolean quickToggle(Context c,String wanted){
-        if(!BuddyAccessibilityService.isEnabled())return launch(c,wanted.equals("Wi-Fi")?new Intent(Settings.ACTION_WIFI_SETTINGS):new Intent(Settings.ACTION_BLUETOOTH_SETTINGS),wanted);
-        BuddyAccessibilityService.get().global("quick_settings");
-        new Handler(Looper.getMainLooper()).postDelayed(()->BuddyAccessibilityService.get().clickText(wanted),700);
-        return true;
+    private static boolean has(String s, String... values) {
+        for (String value : values) if (s.contains(value)) return true;
+        return false;
     }
 
-    private static void doCall(Context c,String target,Callback cb){
-        String n=target==null?"":target.replaceAll("[^0-9+]","");
-        if(n.isEmpty())n=findContactNumber(c,target);
-        if(n==null||n.isEmpty()){done(c,cb,"Contact/number nahi mila.");return;}
-        if(Build.VERSION.SDK_INT>=23&&c.checkSelfPermission(Manifest.permission.CALL_PHONE)!=PackageManager.PERMISSION_GRANTED){done(c,cb,"Phone call permission allow karo.");return;}
-        try{
-            Intent i=new Intent(Intent.ACTION_CALL,Uri.parse("tel:"+Uri.encode(n)));
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            c.startActivity(i);
-            done(c,cb,"Calling…");
-        }catch(Throwable t){done(c,cb,"Call start nahi hua.");}
-    }
-
-    private static void doSms(Context c,String target,String message,Callback cb){
-        String n=target==null?"":target.replaceAll("[^0-9+]","");
-        if(n.isEmpty())n=findContactNumber(c,target);
-        if(n==null||n.isEmpty()){done(c,cb,"SMS recipient nahi mila.");return;}
-        if(Build.VERSION.SDK_INT>=23&&c.checkSelfPermission(Manifest.permission.SEND_SMS)!=PackageManager.PERMISSION_GRANTED){done(c,cb,"SMS permission allow karo.");return;}
-        try{SmsManager.getDefault().sendTextMessage(n,null,message,null,null);done(c,cb,"SMS send kar diya.");}
-        catch(Throwable t){done(c,cb,"SMS send nahi hua.");}
-    }
-
-    private static String findContactNumber(Context c,String wanted){
-        Cursor cur=null;
-        try{
-            String q=wanted==null?"":wanted.replace("%","\\%");
-            cur=c.getContentResolver().query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                    new String[]{ContactsContract.CommonDataKinds.Phone.NUMBER},
-                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME+" LIKE ? ESCAPE '\\'",
-                    new String[]{"%"+q+"%"},
-                    ContactsContract.CommonDataKinds.Phone.IS_PRIMARY+" DESC");
-            if(cur!=null&&cur.moveToFirst())return cur.getString(0);
-        }catch(Throwable ignored){}finally{if(cur!=null)cur.close();}
+    private static String after(String s, String... prefixes) {
+        for (String prefix : prefixes) if (s.startsWith(prefix)) return s.substring(prefix.length()).trim();
         return null;
     }
 
-    private static String formatWhatsAppNumber(String raw){String n=raw.replaceAll("[^0-9]","");if(n.length()==10)n="91"+n;return n;}
+    private static String cap(String s) {
+        return s.substring(0, 1).toUpperCase(Locale.ROOT) + s.substring(1);
+    }
 
-    private static String packageFor(String app,String[][] apps){for(String[] a:apps)if(a[0].equals(app))return a[1];return "";}
+    private static void done(Context c, Callback cb, String msg) {
+        if (cb == null) return;
+        new Handler(Looper.getMainLooper()).post(() -> cb.onResult(msg));
+    }
 
-    private static boolean launch(Context c,Intent i,String label){
-        try{
+    private static void global(Context c, String action, Callback cb) {
+        BuddyAccessibilityService service = BuddyAccessibilityService.get();
+        if (service == null) {
+            done(c, cb, "Phone control ke liye Accessibility enable karo.");
+            return;
+        }
+        boolean ok = service.global(action);
+        done(c, cb, ok ? actionText(action) + " done." : actionText(action) + " nahi hua.");
+    }
+
+    private static String actionText(String action) {
+        switch (action) {
+            case "quick_settings": return "Quick settings";
+            case "notifications": return "Notifications";
+            case "recents": return "Recent apps";
+            case "screenshot": return "Screenshot";
+            case "lock": return "Lock";
+            default: return "Back";
+        }
+    }
+
+    private static boolean accessScroll(boolean down) {
+        return BuddyAccessibilityService.isEnabled() && BuddyAccessibilityService.get().scroll(down);
+    }
+
+    private static void doVolume(Context c, String s, Callback cb) {
+        AudioManager a = (AudioManager) c.getSystemService(Context.AUDIO_SERVICE);
+        if (a == null) {
+            done(c, cb, "Volume service unavailable.");
+            return;
+        }
+        Integer p = CommandRouter.extractNumber(s);
+        if (has(s, "mute", "silent")) {
+            a.setStreamVolume(AudioManager.STREAM_MUSIC, 0, AudioManager.FLAG_SHOW_UI);
+            done(c, cb, "Volume mute.");
+            return;
+        }
+        if (p != null) {
+            int max = a.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+            int v = Math.round(max * Math.max(0, Math.min(100, p)) / 100f);
+            a.setStreamVolume(AudioManager.STREAM_MUSIC, v, AudioManager.FLAG_SHOW_UI);
+            done(c, cb, "Volume " + p + " percent.");
+            return;
+        }
+        boolean down = has(s, "kam", "down", "decrease", "lower");
+        a.adjustStreamVolume(AudioManager.STREAM_MUSIC,
+                down ? AudioManager.ADJUST_LOWER : AudioManager.ADJUST_RAISE,
+                AudioManager.FLAG_SHOW_UI);
+        done(c, cb, down ? "Volume kam kar diya." : "Volume badha diya.");
+    }
+
+    private static void doBrightness(Context c, String s, Callback cb) {
+        Integer p = CommandRouter.extractNumber(s);
+        try {
+            if (!Settings.System.canWrite(c)) {
+                launch(c, new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS,
+                        Uri.parse("package:" + c.getPackageName())));
+                done(c, cb, "Brightness permission allow karo.");
+                return;
+            }
+            if (p != null) {
+                int value = Math.max(1, Math.min(100, p)) * 255 / 100;
+                Settings.System.putInt(c.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS, value);
+                done(c, cb, "Brightness " + p + " percent.");
+                return;
+            }
+            int cur = Settings.System.getInt(c.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS, 128);
+            int delta = has(s, "kam", "down", "decrease") ? -32 : 32;
+            int value = Math.max(1, Math.min(255, cur + delta));
+            Settings.System.putInt(c.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS, value);
+            done(c, cb, delta < 0 ? "Brightness kam kar diya." : "Brightness badha diya.");
+        } catch (Throwable t) {
+            done(c, cb, "Brightness control nahi hua.");
+        }
+    }
+
+    private static void toggleFlash(Context c, Callback cb) {
+        try {
+            android.hardware.camera2.CameraManager cm =
+                    (android.hardware.camera2.CameraManager) c.getSystemService(Context.CAMERA_SERVICE);
+            if (cm == null) {
+                done(c, cb, "Torch unavailable.");
+                return;
+            }
+            for (String id : cm.getCameraIdList()) {
+                android.hardware.camera2.CameraCharacteristics ch = cm.getCameraCharacteristics(id);
+                Integer facing = ch.get(android.hardware.camera2.CameraCharacteristics.LENS_FACING);
+                Boolean flash = ch.get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE);
+                if (Integer.valueOf(android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK).equals(facing)
+                        && Boolean.TRUE.equals(flash)) {
+                    boolean now = c.getSharedPreferences(PREF, Context.MODE_PRIVATE).getBoolean("flash", false);
+                    cm.setTorchMode(id, !now);
+                    c.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit().putBoolean("flash", !now).apply();
+                    done(c, cb, !now ? "Torch on." : "Torch off.");
+                    return;
+                }
+            }
+        } catch (Throwable ignored) {}
+        done(c, cb, "Torch control available nahi hai.");
+    }
+
+    private static void openWirelessSettings(Context c, String action, String name, Callback cb) {
+        boolean toggling = false;
+        // Modern Android versions intentionally limit silent Wi-Fi/Bluetooth toggles for ordinary apps.
+        if (BuddyAccessibilityService.isEnabled()) {
+            BuddyAccessibilityService service = BuddyAccessibilityService.get();
+            service.global("quick_settings");
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                boolean clicked = service.clickText(name);
+                done(c, cb, clicked ? name + " setting change kar di." : name + " quick setting nahi mili.");
+            }, 450L);
+            toggling = true;
+        }
+        if (!toggling) {
+            boolean opened = launch(c, new Intent(action));
+            done(c, cb, opened ? name + " settings open kar di." : name + " settings open nahi hui.");
+        }
+    }
+
+    private static void openSettings(Context c, Callback cb) {
+        done(c, cb, launch(c, new Intent(Settings.ACTION_SETTINGS))
+                ? "Settings khol diya." : "Settings open nahi hua.");
+    }
+
+    private static void media(Context c, int keyCode) {
+        AudioManager am = (AudioManager) c.getSystemService(Context.AUDIO_SERVICE);
+        if (am == null) return;
+        am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, keyCode));
+        am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, keyCode));
+    }
+
+    private static void doCall(Context c, String target, Callback cb) {
+        String number = target == null ? "" : target.replaceAll("[^0-9+]", "");
+        if (number.isEmpty()) number = findContactNumber(c, target);
+        if (number == null || number.isEmpty()) {
+            done(c, cb, "Contact/number nahi mila.");
+            return;
+        }
+        // Safer default: open the dialer, leaving final call initiation to the user.
+        Intent i = new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(number)));
+        done(c, cb, launch(c, i) ? "Dialer ready hai. Call button tum confirm karna." : "Dialer open nahi hua.");
+    }
+
+    private static void doSms(Context c, String target, String message, Callback cb) {
+        String number = target == null ? "" : target.replaceAll("[^0-9+]", "");
+        if (number.isEmpty()) number = findContactNumber(c, target);
+        if (number == null || number.isEmpty()) {
+            done(c, cb, "SMS recipient nahi mila.");
+            return;
+        }
+        Intent i = new Intent(Intent.ACTION_SENDTO,
+                Uri.parse("smsto:" + Uri.encode(number)));
+        i.putExtra("sms_body", message);
+        done(c, cb, launch(c, i) ? "SMS composer ready hai. Send tum confirm karna." : "SMS composer open nahi hua.");
+    }
+
+    private static String findContactNumber(Context c, String wanted) {
+        Cursor cur = null;
+        try {
+            String q = wanted == null ? "" : wanted.replace("%", "\\%");
+            cur = c.getContentResolver().query(
+                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                    new String[]{ContactsContract.CommonDataKinds.Phone.NUMBER},
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " LIKE ? ESCAPE '\\'",
+                    new String[]{"%" + q + "%"},
+                    ContactsContract.CommonDataKinds.Phone.IS_PRIMARY + " DESC");
+            if (cur != null && cur.moveToFirst()) return cur.getString(0);
+        } catch (Throwable ignored) {
+        } finally {
+            if (cur != null) cur.close();
+        }
+        return null;
+    }
+
+    private static String formatWhatsAppNumber(String raw) {
+        String n = raw.replaceAll("[^0-9]", "");
+        if (n.length() == 10) n = "91" + n;
+        return n;
+    }
+
+    private static boolean launch(Context c, Intent i) {
+        try {
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            c.startActivity(i); return true;
-        }catch(Throwable ignored){ return false; }
+            c.startActivity(i);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
-    private static String battery(Context c){
-        Intent i=c.registerReceiver(null,new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-        if(i==null)return "Battery status nahi mila.";
-        int l=i.getIntExtra("level",-1),sc=i.getIntExtra("scale",100);
-        return l>=0?"Battery "+Math.round(l*100f/sc)+" percent hai.":"Battery status nahi mila.";
+    private static String battery(Context c) {
+        Intent i = c.registerReceiver(null, new android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        if (i == null) return "Battery status nahi mila.";
+        int level = i.getIntExtra("level", -1);
+        int scale = i.getIntExtra("scale", 100);
+        return level >= 0 ? "Battery " + Math.round(level * 100f / scale) + " percent hai." : "Battery status nahi mila.";
     }
 
-    private static void cloud(Context c,String raw,Callback cb){
-        String key=c.getSharedPreferences(PREF,0).getString(KEY,"").trim();
-        if(key.isEmpty()){done(c,cb,"AI key add nahi hai.");return;}
-        new Thread(()->{
-            HttpURLConnection h=null;
-            try{
-                JSONObject body=new JSONObject().put("model","openrouter/free").put("temperature",0.1).put("max_tokens",80);
-                JSONArray m=new JSONArray();
-                m.put(new JSONObject().put("role","system").put("content","You are Buddy. Reply in one short Hinglish/English sentence, maximum 12 words. Never claim device actions were completed."));
-                m.put(new JSONObject().put("role","user").put("content",raw));
-                body.put("messages",m);
-                h=(HttpURLConnection)new URL("https://openrouter.ai/api/v1/chat/completions").openConnection();
-                h.setRequestMethod("POST");h.setConnectTimeout(1500);h.setReadTimeout(3500);h.setDoOutput(true);
-                h.setRequestProperty("Authorization","Bearer "+key);
-                h.setRequestProperty("Content-Type","application/json");
-                try(OutputStream o=h.getOutputStream()){o.write(body.toString().getBytes(StandardCharsets.UTF_8));}
-                int code=h.getResponseCode();
-                if(code<200||code>=300){done(c,cb,"AI response nahi aa raha.");return;}
-                BufferedReader r=new BufferedReader(new InputStreamReader(h.getInputStream(),StandardCharsets.UTF_8));
-                StringBuilder b=new StringBuilder();String line;while((line=r.readLine())!=null)b.append(line);
-                String ans=new JSONObject(b.toString()).getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content","");
-                done(c,cb,ans.replace("\n"," ").trim());
-            }catch(Throwable t){done(c,cb,"AI slow hai. Local command bolo.");}
-            finally{if(h!=null)h.disconnect();}
-        }).start();
+    private static void cloud(Context c, String raw, Callback cb) {
+        String key = c.getSharedPreferences(PREF, Context.MODE_PRIVATE).getString(AI_KEY, "").trim();
+        if (key.isEmpty()) {
+            done(c, cb, "AI key add nahi hai.");
+            return;
+        }
+        new Thread(() -> {
+            HttpURLConnection h = null;
+            try {
+                JSONObject body = new JSONObject()
+                        .put("model", "openrouter/free")
+                        .put("temperature", 0.2)
+                        .put("max_tokens", 80);
+                JSONArray messages = new JSONArray();
+                messages.put(new JSONObject().put("role", "system").put("content",
+                        "You are Buddy, a friendly Indian voice assistant. " +
+                        "Reply naturally in concise Hinglish or English. Maximum 18 words. " +
+                        "Never claim a device action happened unless a local tool reported success."));
+                messages.put(new JSONObject().put("role", "user").put("content", raw));
+                body.put("messages", messages);
+
+                h = (HttpURLConnection) new URL("https://openrouter.ai/api/v1/chat/completions").openConnection();
+                h.setRequestMethod("POST");
+                h.setConnectTimeout(1200);
+                h.setReadTimeout(3000);
+                h.setDoOutput(true);
+                h.setRequestProperty("Authorization", "Bearer " + key);
+                h.setRequestProperty("Content-Type", "application/json");
+                try (OutputStream out = h.getOutputStream()) {
+                    out.write(body.toString().getBytes(StandardCharsets.UTF_8));
+                }
+
+                int code = h.getResponseCode();
+                if (code < 200 || code >= 300) {
+                    done(c, cb, "AI response nahi aa raha.");
+                    return;
+                }
+
+                BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(h.getInputStream(), StandardCharsets.UTF_8));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) sb.append(line);
+
+                String answer = new JSONObject(sb.toString())
+                        .getJSONArray("choices")
+                        .getJSONObject(0)
+                        .getJSONObject("message")
+                        .optString("content", "")
+                        .replace("\\n", " ")
+                        .trim();
+
+                done(c, cb, answer.isEmpty() ? "Mujhe samajh nahi aaya." : answer);
+            } catch (Throwable t) {
+                done(c, cb, "AI slow hai. Local command try karo.");
+            } finally {
+                if (h != null) h.disconnect();
+            }
+        }, "buddy-ai").start();
     }
 }

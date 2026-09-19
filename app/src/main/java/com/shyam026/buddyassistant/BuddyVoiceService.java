@@ -7,6 +7,7 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -22,14 +23,10 @@ import java.util.ArrayList;
 import java.util.Locale;
 
 public class BuddyVoiceService extends Service {
-    public static final String ACTION_STATUS =
-            "com.shyam026.buddyassistant.VOICE_STATUS";
-    public static final String ACTION_ENABLE_WAKE =
-            "com.shyam026.buddyassistant.ENABLE_WAKE";
-    public static final String ACTION_TAP_COMMAND =
-            "com.shyam026.buddyassistant.TAP_COMMAND";
-    public static final String ACTION_STOP =
-            "com.shyam026.buddyassistant.STOP";
+    public static final String ACTION_STATUS = "com.shyam026.buddyassistant.VOICE_STATUS";
+    public static final String ACTION_ENABLE_WAKE = "com.shyam026.buddyassistant.ENABLE_WAKE";
+    public static final String ACTION_TAP_COMMAND = "com.shyam026.buddyassistant.TAP_COMMAND";
+    public static final String ACTION_STOP = "com.shyam026.buddyassistant.STOP";
 
     public static final String EXTRA_STATE = "state";
     public static final String EXTRA_TRANSCRIPT = "transcript";
@@ -39,6 +36,7 @@ public class BuddyVoiceService extends Service {
     public static final String STATE_IDLE = "idle";
     public static final String STATE_WAITING_WAKE = "waiting_wake";
     public static final String STATE_LISTENING_COMMAND = "listening_command";
+    public static final String STATE_PROCESSING = "processing";
     public static final String STATE_SPEAKING = "speaking";
     public static final String STATE_ERROR = "error";
 
@@ -58,7 +56,8 @@ public class BuddyVoiceService extends Service {
     private boolean speaking;
     private boolean stopping;
     private boolean followUpAfterWake;
-    private long retryDelay = 600L;
+    private boolean recognizerStarting;
+    private long wakeRetryDelay = 400L;
 
     private final Runnable wakeRetry = () -> {
         if (!stopping && mode == Mode.WAKE && !listening && !speaking) {
@@ -75,7 +74,7 @@ public class BuddyVoiceService extends Service {
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         stopping = false;
-        startForeground(NOTIFICATION_ID, buildNotification());
+        startAsForeground();
 
         String action = intent == null ? null : intent.getAction();
 
@@ -85,199 +84,157 @@ public class BuddyVoiceService extends Service {
         }
 
         if (ACTION_ENABLE_WAKE.equals(action)) {
-            getSharedPreferences(PREF, MODE_PRIVATE).edit()
-                    .putBoolean(KEY_WAKE, true)
-                    .apply();
+            getSharedPreferences(PREF, MODE_PRIVATE).edit().putBoolean(KEY_WAKE, true).apply();
             followUpAfterWake = false;
             stopSpeaking();
             mode = Mode.WAKE;
-            stopListeningOnly();
-            retryDelay = 600L;
-            scheduleWake(100);
-            sendState(STATE_WAITING_WAKE, null, null);
+            cancelRecognition();
+            wakeRetryDelay = 400L;
+            announce(STATE_WAITING_WAKE, null, null);
+            scheduleWake(60L);
             return START_STICKY;
         }
 
         if (ACTION_TAP_COMMAND.equals(action)) {
-            String explicitCommand = intent == null
-                    ? null
-                    : intent.getStringExtra(EXTRA_COMMAND);
-
-            getSharedPreferences(PREF, MODE_PRIVATE).edit()
-                    .putBoolean(KEY_WAKE, getSharedPreferences(PREF, MODE_PRIVATE)
-                            .getBoolean(KEY_WAKE, false))
-                    .apply();
-
+            String explicit = intent.getStringExtra(EXTRA_COMMAND);
             mode = Mode.COMMAND;
             followUpAfterWake = false;
             stopSpeaking();
-            stopListeningOnly();
-
-            if (explicitCommand != null && !explicitCommand.trim().isEmpty()) {
-                executeCommand(explicitCommand.trim());
+            cancelRecognition();
+            if (explicit != null && !explicit.trim().isEmpty()) {
+                executeCommand(explicit.trim());
             } else {
                 startRecognition(false);
             }
             return START_STICKY;
         }
 
-        boolean wake = getSharedPreferences(PREF, MODE_PRIVATE)
-                .getBoolean(KEY_WAKE, false);
+        boolean wake = getSharedPreferences(PREF, MODE_PRIVATE).getBoolean(KEY_WAKE, false);
         mode = wake ? Mode.WAKE : Mode.IDLE;
-        if (wake) {
-            scheduleWake(100);
-            sendState(STATE_WAITING_WAKE, null, null);
-        } else {
-            sendState(STATE_IDLE, null, null);
-        }
+        announce(wake ? STATE_WAITING_WAKE : STATE_IDLE, null, null);
+        if (wake) scheduleWake(60L);
         return START_STICKY;
+    }
+
+    private void startAsForeground() {
+        try {
+            Notification notification = buildNotification();
+            if (Build.VERSION.SDK_INT >= 29) {
+                startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+            } else {
+                startForeground(NOTIFICATION_ID, notification);
+            }
+        } catch (Throwable t) {
+            announce(STATE_ERROR, null, "Buddy voice service could not start.");
+        }
     }
 
     private void initTts() {
         tts = new TextToSpeech(this, status -> {
-            if (status == TextToSpeech.SUCCESS) {
-                applyLanguage();
-                tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                    @Override public void onStart(String utteranceId) {
-                        speaking = true;
-                        sendState(STATE_SPEAKING, null, null);
-                    }
+            if (status != TextToSpeech.SUCCESS) return;
+            applyLanguage();
+            tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                @Override public void onStart(String id) {
+                    speaking = true;
+                    announce(STATE_SPEAKING, null, null);
+                }
 
-                    @Override public void onDone(String utteranceId) {
-                        handler.post(this::resumeAfterSpeech);
-                    }
+                @Override public void onDone(String id) {
+                    handler.post(() -> resumeAfterSpeech());
+                }
 
-                    @Override public void onError(String utteranceId) {
-                        handler.post(this::resumeAfterSpeech);
-                    }
-
-                    private void resumeAfterSpeech() {
-                        speaking = false;
-                        if (stopping) return;
-
-                        if (followUpAfterWake) {
-                            followUpAfterWake = false;
-                            mode = Mode.COMMAND;
-                            scheduleCommandRecognition(160);
-                        } else if (getSharedPreferences(PREF, MODE_PRIVATE)
-                                .getBoolean(KEY_WAKE, false)) {
-                            mode = Mode.WAKE;
-                            scheduleWake(220);
-                            sendState(STATE_WAITING_WAKE, null, null);
-                        } else {
-                            mode = Mode.IDLE;
-                            sendState(STATE_IDLE, null, null);
-                        }
-                    }
-                });
-            }
+                @Override public void onError(String id) {
+                    handler.post(() -> resumeAfterSpeech());
+                }
+            });
         });
     }
 
     private void applyLanguage() {
         try {
-            String tag = getSharedPreferences(PREF, MODE_PRIVATE)
-                    .getString(KEY_LANG, "en-IN");
+            String tag = getSharedPreferences(PREF, MODE_PRIVATE).getString(KEY_LANG, "en-IN");
             BuddyVoiceProfile.apply(tts, Locale.forLanguageTag(tag));
-        } catch (Throwable ignored) {
-        }
+        } catch (Throwable ignored) {}
     }
 
     private void initRecognizer() {
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             recognizer = null;
-            sendState(STATE_ERROR, null, "Speech recognition unavailable.");
+            announce(STATE_ERROR, null, "Speech recognition is unavailable on this device.");
             return;
         }
 
         try {
-            if (recognizer != null) {
-                recognizer.destroy();
-                recognizer = null;
-            }
+            if (recognizer != null) recognizer.destroy();
 
-            if (Build.VERSION.SDK_INT >= 31
-                    && SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
+            recognizer = null;
+            if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
                 try {
                     recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this);
-                } catch (Throwable ignored) {
-                }
+                } catch (Throwable ignored) {}
             }
-
-            if (recognizer == null) {
-                recognizer = SpeechRecognizer.createSpeechRecognizer(this);
-            }
+            if (recognizer == null) recognizer = SpeechRecognizer.createSpeechRecognizer(this);
 
             recognizer.setRecognitionListener(new RecognitionListener() {
                 @Override public void onReadyForSpeech(Bundle params) {
                     listening = true;
-                    if (mode == Mode.WAKE) {
-                        sendState(STATE_WAITING_WAKE, null, null);
-                    } else if (mode == Mode.COMMAND) {
-                        sendState(STATE_LISTENING_COMMAND, null, null);
-                    }
+                    if (mode == Mode.COMMAND) announce(STATE_LISTENING_COMMAND, null, null);
+                    else if (mode == Mode.WAKE) announce(STATE_WAITING_WAKE, null, null);
                 }
 
                 @Override public void onBeginningOfSpeech() {}
-
                 @Override public void onRmsChanged(float rmsdB) {}
-
                 @Override public void onBufferReceived(byte[] buffer) {}
-
                 @Override public void onEndOfSpeech() {}
 
                 @Override public void onError(int error) {
                     listening = false;
+                    recognizerStarting = false;
                     if (stopping || speaking) return;
 
                     if (mode == Mode.WAKE) {
-                        scheduleWake(error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY
-                                ? 1400 : 600);
+                        long delay = error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY ? 850L : 450L;
+                        scheduleWake(delay);
                         return;
                     }
 
                     if (mode == Mode.COMMAND) {
-                        mode = getSharedPreferences(PREF, MODE_PRIVATE)
-                                .getBoolean(KEY_WAKE, false) ? Mode.WAKE : Mode.IDLE;
-                        if (mode == Mode.WAKE) {
-                            sendState(STATE_WAITING_WAKE, null, null);
-                            scheduleWake(350);
+                        String msg = error == SpeechRecognizer.ERROR_NO_MATCH
+                                ? "Voice samajh nahi aayi. Dobara bolo."
+                                : error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS
+                                ? "Microphone permission required."
+                                : "Voice input failed. Dobara try karo.";
+                        boolean wake = getSharedPreferences(PREF, MODE_PRIVATE).getBoolean(KEY_WAKE, false);
+                        if (wake) {
+                            mode = Mode.WAKE;
+                            announce(STATE_WAITING_WAKE, null, msg);
+                            scheduleWake(250L);
                         } else {
-                            sendState(
-                                    error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS
-                                            ? STATE_ERROR
-                                            : STATE_IDLE,
-                                    null,
-                                    error == SpeechRecognizer.ERROR_NO_MATCH
-                                            ? "Voice samajh nahi aayi."
-                                            : null);
+                            mode = Mode.IDLE;
+                            announce(error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS
+                                    ? STATE_ERROR : STATE_IDLE, null, msg);
                         }
                     }
                 }
 
                 @Override public void onResults(Bundle results) {
                     listening = false;
+                    recognizerStarting = false;
                     if (stopping || speaking) return;
 
-                    ArrayList<String> phrases =
-                            results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                    ArrayList<String> phrases = results == null
+                            ? null
+                            : results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
 
                     if (mode == Mode.WAKE) {
                         handleWakeResults(phrases);
-                        return;
-                    }
-
-                    if (mode == Mode.COMMAND) {
+                    } else if (mode == Mode.COMMAND) {
                         String command = firstUsable(phrases);
                         if (command == null) {
-                            mode = getSharedPreferences(PREF, MODE_PRIVATE)
-                                    .getBoolean(KEY_WAKE, false) ? Mode.WAKE : Mode.IDLE;
-                            if (mode == Mode.WAKE) {
-                                scheduleWake(250);
-                                sendState(STATE_WAITING_WAKE, null, null);
-                            } else {
-                                sendState(STATE_IDLE, null, null);
-                            }
+                            finishCommand();
                         } else {
                             executeCommand(command);
                         }
@@ -285,42 +242,41 @@ public class BuddyVoiceService extends Service {
                 }
 
                 @Override public void onPartialResults(Bundle partialResults) {}
-
                 @Override public void onEvent(int eventType, Bundle params) {}
             });
         } catch (Throwable t) {
             recognizer = null;
-            sendState(STATE_ERROR, null, "Voice input unavailable.");
+            announce(STATE_ERROR, null, "Voice input could not be initialized.");
         }
     }
 
     private void handleWakeResults(ArrayList<String> phrases) {
-        String remainder = null;
+        String wakeRemainder = null;
 
         if (phrases != null) {
             for (String phrase : phrases) {
-                if (CommandRouter.isWakePhrase(phrase)) {
-                    remainder = CommandRouter.removeWakePhrase(phrase);
+                String r = CommandRouter.removeWakePhrase(phrase);
+                if (r != null) {
+                    wakeRemainder = r;
                     break;
                 }
             }
         }
 
-        if (remainder == null) {
-            scheduleWake(250);
-            sendState(STATE_WAITING_WAKE, null, null);
+        if (wakeRemainder == null) {
+            scheduleWake(180L);
             return;
         }
 
-        retryDelay = 600L;
+        wakeRetryDelay = 400L;
         handler.removeCallbacks(wakeRetry);
 
-        if (remainder.trim().isEmpty()) {
+        if (wakeRemainder.isEmpty()) {
             followUpAfterWake = true;
             mode = Mode.COMMAND;
             speak("Haan, bolo.");
         } else {
-            executeCommand(remainder.trim());
+            executeCommand(wakeRemainder);
         }
     }
 
@@ -333,106 +289,82 @@ public class BuddyVoiceService extends Service {
     }
 
     private void executeCommand(String command) {
-        if (command == null || command.trim().isEmpty()) return;
-
+        if (command == null || command.trim().isEmpty()) {
+            finishCommand();
+            return;
+        }
         handler.removeCallbacks(wakeRetry);
-        stopListeningOnly();
-        sendState(STATE_LISTENING_COMMAND, command, null);
-
+        cancelRecognition();
+        announce(STATE_PROCESSING, command, null);
         CommandEngine.execute(this, command, message -> speak(message));
     }
 
     private void startRecognition(boolean wake) {
-        if (stopping || speaking) return;
-        if (Build.VERSION.SDK_INT >= 23
-                && checkSelfPermission(Manifest.permission.RECORD_AUDIO)
-                != PackageManager.PERMISSION_GRANTED) {
+        if (stopping || speaking || listening || recognizerStarting) return;
+
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             mode = Mode.IDLE;
-            sendState(STATE_ERROR, null, "Microphone permission required.");
+            announce(STATE_ERROR, null, "Microphone permission required.");
             return;
         }
 
         if (recognizer == null) {
             initRecognizer();
-            if (recognizer == null) {
-                mode = Mode.IDLE;
-                return;
-            }
+            if (recognizer == null) return;
         }
 
         mode = wake ? Mode.WAKE : Mode.COMMAND;
-        stopListeningOnly();
+        recognizerStarting = true;
 
-        Intent recognizerIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-        recognizerIntent.putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-        recognizerIntent.putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE,
-                wake
-                        ? "en-IN"
-                        : getSharedPreferences(PREF, MODE_PRIVATE)
-                                .getString(KEY_LANG, "en-IN"));
-        recognizerIntent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
-        recognizerIntent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
-        recognizerIntent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
+        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE,
+                        getSharedPreferences(PREF, MODE_PRIVATE).getString(KEY_LANG, "en-IN"))
+                .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 6)
+                .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+                .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
 
-        // Longer wake-session windows reduce recognizer churn and the visible mic flicker.
-        recognizerIntent.putExtra(
-                RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
-                wake ? 1900L : 1200L);
-        recognizerIntent.putExtra(
-                RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
-                wake ? 1600L : 1000L);
-        recognizerIntent.putExtra(
-                RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,
-                wake ? 900L : 250L);
+        if (wake) {
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 900L);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 700L);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 350L);
+        } else {
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 950L);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 750L);
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 180L);
+        }
 
         try {
-            recognizer.startListening(recognizerIntent);
-            retryDelay = 600L;
+            recognizer.startListening(intent);
         } catch (Throwable t) {
+            recognizerStarting = false;
             listening = false;
-            scheduleWake(wake ? 900 : 0);
-            if (!wake) sendState(STATE_ERROR, null, "Mic busy. Tap again.");
+            if (wake) scheduleWake(700L);
+            else announce(STATE_ERROR, null, "Mic is busy. Try again.");
         }
-    }
-
-    private void scheduleCommandRecognition(long delay) {
-        handler.postDelayed(() -> {
-            if (!stopping && !speaking && mode == Mode.COMMAND) {
-                startRecognition(false);
-            }
-        }, Math.max(80L, delay));
     }
 
     private void scheduleWake(long delay) {
         handler.removeCallbacks(wakeRetry);
         if (stopping || mode != Mode.WAKE || speaking) return;
-
-        long actual = Math.max(delay, retryDelay);
+        long actual = Math.max(delay, wakeRetryDelay);
         handler.postDelayed(wakeRetry, actual);
-        retryDelay = Math.min(5000L, Math.max(700L, retryDelay * 2L));
+        wakeRetryDelay = Math.min(3200L, Math.max(450L, wakeRetryDelay * 2L));
     }
 
-    private void stopListeningOnly() {
+    private void cancelRecognition() {
         handler.removeCallbacks(wakeRetry);
-        if (recognizer != null && listening) {
-            try {
-                recognizer.cancel();
-            } catch (Throwable ignored) {
-            }
+        if (recognizer != null) {
+            try { recognizer.cancel(); } catch (Throwable ignored) {}
         }
         listening = false;
+        recognizerStarting = false;
     }
 
     private void stopSpeaking() {
         speaking = false;
         if (tts != null) {
-            try {
-                tts.stop();
-            } catch (Throwable ignored) {
-            }
+            try { tts.stop(); } catch (Throwable ignored) {}
         }
     }
 
@@ -441,10 +373,15 @@ public class BuddyVoiceService extends Service {
             message = "Command samajh nahi aayi.";
         }
 
-        stopListeningOnly();
+        cancelRecognition();
         applyLanguage();
         speaking = true;
-        sendState(STATE_SPEAKING, null, message);
+        announce(STATE_SPEAKING, null, message);
+
+        if (tts == null) {
+            resumeAfterSpeech();
+            return;
+        }
 
         try {
             int result = tts.speak(
@@ -452,71 +389,61 @@ public class BuddyVoiceService extends Service {
                     TextToSpeech.QUEUE_FLUSH,
                     null,
                     "buddy-" + System.nanoTime());
-
-            if (result == TextToSpeech.ERROR) {
-                speaking = false;
-                resumeAfterSpeechFallback();
-            }
+            if (result == TextToSpeech.ERROR) resumeAfterSpeech();
         } catch (Throwable t) {
-            speaking = false;
-            resumeAfterSpeechFallback();
+            resumeAfterSpeech();
         }
     }
 
-    private void resumeAfterSpeechFallback() {
+    private void resumeAfterSpeech() {
         if (stopping) return;
+        speaking = false;
 
         if (followUpAfterWake) {
             followUpAfterWake = false;
             mode = Mode.COMMAND;
-            scheduleCommandRecognition(180);
-        } else if (getSharedPreferences(PREF, MODE_PRIVATE)
-                .getBoolean(KEY_WAKE, false)) {
-            mode = Mode.WAKE;
-            sendState(STATE_WAITING_WAKE, null, null);
-            scheduleWake(250);
-        } else {
-            mode = Mode.IDLE;
-            sendState(STATE_IDLE, null, null);
+            handler.postDelayed(() -> startRecognition(false), 90L);
+            return;
         }
+
+        boolean wake = getSharedPreferences(PREF, MODE_PRIVATE).getBoolean(KEY_WAKE, false);
+        mode = wake ? Mode.WAKE : Mode.IDLE;
+        announce(wake ? STATE_WAITING_WAKE : STATE_IDLE, null, null);
+        if (wake) scheduleWake(150L);
+    }
+
+    private void finishCommand() {
+        boolean wake = getSharedPreferences(PREF, MODE_PRIVATE).getBoolean(KEY_WAKE, false);
+        mode = wake ? Mode.WAKE : Mode.IDLE;
+        announce(wake ? STATE_WAITING_WAKE : STATE_IDLE, null, null);
+        if (wake) scheduleWake(160L);
     }
 
     private Notification buildNotification() {
-        String content = getSharedPreferences(PREF, MODE_PRIVATE)
-                .getBoolean(KEY_WAKE, false)
-                ? "Wake word ready — say “Hey Buddy”"
-                : "Tap to talk from Buddy";
-        Notification.Builder builder;
-        if (Build.VERSION.SDK_INT >= 26) {
-            builder = new Notification.Builder(this, "buddy_voice");
-        } else {
-            builder = new Notification.Builder(this);
-        }
-        return builder
-                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+        boolean wake = getSharedPreferences(PREF, MODE_PRIVATE).getBoolean(KEY_WAKE, false);
+        Notification.Builder b = Build.VERSION.SDK_INT >= 26
+                ? new Notification.Builder(this, "buddy_voice")
+                : new Notification.Builder(this);
+        return b.setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentTitle("Buddy")
-                .setContentText(content)
+                .setContentText(wake ? "Wake listening ready — Buddy / Hey Buddy" : "Tap to talk")
                 .setOngoing(true)
                 .build();
     }
 
     private void createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            NotificationManager manager =
-                    getSystemService(NotificationManager.class);
-            if (manager != null) {
-                manager.createNotificationChannel(
-                        new NotificationChannel(
-                                "buddy_voice",
-                                "Buddy voice",
-                                NotificationManager.IMPORTANCE_LOW));
-            }
+        if (Build.VERSION.SDK_INT < 26) return;
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager != null) {
+            manager.createNotificationChannel(new NotificationChannel(
+                    "buddy_voice",
+                    "Buddy voice",
+                    NotificationManager.IMPORTANCE_LOW));
         }
     }
 
-    private void sendState(String state, String transcript, String reply) {
-        Intent i = new Intent(ACTION_STATUS);
-        i.setPackage(getPackageName());
+    private void announce(String state, String transcript, String reply) {
+        Intent i = new Intent(ACTION_STATUS).setPackage(getPackageName());
         i.putExtra(EXTRA_STATE, state);
         if (transcript != null) i.putExtra(EXTRA_TRANSCRIPT, transcript);
         if (reply != null) i.putExtra(EXTRA_REPLY, reply);
@@ -526,7 +453,7 @@ public class BuddyVoiceService extends Service {
     private void stopVoiceService() {
         stopping = true;
         handler.removeCallbacksAndMessages(null);
-        stopListeningOnly();
+        cancelRecognition();
         stopSpeaking();
         mode = Mode.IDLE;
         stopSelf();
@@ -535,31 +462,16 @@ public class BuddyVoiceService extends Service {
     @Override public void onDestroy() {
         stopping = true;
         handler.removeCallbacksAndMessages(null);
-
+        cancelRecognition();
+        stopSpeaking();
         if (recognizer != null) {
-            try {
-                recognizer.cancel();
-            } catch (Throwable ignored) {
-            }
-            try {
-                recognizer.destroy();
-            } catch (Throwable ignored) {
-            }
+            try { recognizer.destroy(); } catch (Throwable ignored) {}
             recognizer = null;
         }
-
         if (tts != null) {
-            try {
-                tts.stop();
-            } catch (Throwable ignored) {
-            }
-            try {
-                tts.shutdown();
-            } catch (Throwable ignored) {
-            }
+            try { tts.stop(); tts.shutdown(); } catch (Throwable ignored) {}
             tts = null;
         }
-
         super.onDestroy();
     }
 

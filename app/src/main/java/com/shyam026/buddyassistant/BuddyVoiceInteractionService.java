@@ -12,47 +12,23 @@ public class BuddyVoiceInteractionService extends VoiceInteractionService {
 
     @Override public void onReady() {
         super.onReady();
-
-        if (!getSharedPreferences(PREF, MODE_PRIVATE)
-                .getBoolean(KEY_WAKE, false)) {
-            return;
-        }
-
+        if (!getSharedPreferences(PREF, MODE_PRIVATE).getBoolean(KEY_WAKE, false)) return;
         if (Build.VERSION.SDK_INT >= 23
-                && checkSelfPermission(Manifest.permission.RECORD_AUDIO)
-                != PackageManager.PERMISSION_GRANTED) {
-            return;
-        }
+                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return;
 
         try {
-            Intent intent = new Intent(this, BuddyVoiceService.class);
-            intent.setAction(BuddyVoiceService.ACTION_ENABLE_WAKE);
-            intent.setPackage(getPackageName());
-
-            if (Build.VERSION.SDK_INT >= 26) {
-                startForegroundService(intent);
-            } else {
-                startService(intent);
-            }
+            Intent intent = new Intent(this, BuddyVoiceService.class)
+                    .setAction(BuddyVoiceService.ACTION_ENABLE_WAKE)
+                    .setPackage(getPackageName());
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent);
+            else startService(intent);
         } catch (Throwable ignored) {
-            // Some OEMs restrict background service starts; the foreground app can retry.
+            // OEM background-start policy can block this; foreground app can start Buddy again.
         }
     }
 
     @Override public void onShutdown() {
-        try {
-            stopService(new Intent(this, BuddyVoiceService.class));
-        } catch (Throwable ignored) {
-        }
+        try { stopService(new Intent(this, BuddyVoiceService.class)); } catch (Throwable ignored) {}
         super.onShutdown();
-    }
-
-    public void openBuddy() {
-        try {
-            Intent i = new Intent(this, MainActivity.class);
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            startActivity(i);
-        } catch (Throwable ignored) {
-        }
     }
 }
