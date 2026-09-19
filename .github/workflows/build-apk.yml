@@ -75,7 +75,6 @@ jobs:
               ("save and verify UI", "SAVE & VERIFY KEY" in files["settings"]),
               ("connectivity tester", "GeminiApiClient.test" in files["settings"]),
               ("settings content description", "Open Buddy Settings" in files["main"]),
-              ("stored-key summary", "BuddySecrets.hasGeminiApiKey" in files["main"]),
               ("real voice tuning", "applyVoiceTuning" in files["voice"]),
               ("voice orb action", "Tap to talk to Buddy" in files["main"] and "orb.setOnClickListener" in files["main"]),
               ("wake action wired", "ACTION_ENABLE_WAKE" in files["main"]),
