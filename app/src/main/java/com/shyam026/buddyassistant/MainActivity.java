@@ -319,12 +319,9 @@ public class MainActivity extends Activity {
         tips.setBackground(rounded(card, line, 20));
         tips.addView(text("TRY SAYING", 11, muted, true));
         TextView examples = text(
-                "“Hey Buddy” → “YouTube kholo”
-" +
-                "“Hey Buddy search JEE physics”
-" +
-                "“Hey Buddy volume 60”
-" +
+                "“Hey Buddy” → “YouTube kholo”\n" +
+                "“Hey Buddy search JEE physics”\n" +
+                "“Hey Buddy volume 60”\n" +
                 "“Hey Buddy brightness 40”",
                 14, white, false);
         examples.setPadding(0, dp(7), 0, 0);
