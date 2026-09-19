@@ -60,6 +60,7 @@ public class BuddyVoiceService extends Service {
     private boolean recognizerStarting;
     private boolean usingOnDeviceRecognizer;
     private int wakeRetryCount;
+    private String pendingSpeech;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -172,7 +173,16 @@ public class BuddyVoiceService extends Service {
 
     private void initTts() {
         tts = new TextToSpeech(this, status -> {
-            if (status != TextToSpeech.SUCCESS) return;
+            if (status != TextToSpeech.SUCCESS) {
+                String pending = pendingSpeech;
+                pendingSpeech = null;
+                if (pending != null && !pending.trim().isEmpty()) {
+                    announce(STATE_ERROR, null,
+                            "Voice reply engine unavailable.");
+                }
+                return;
+            }
+
             applyLanguage();
             applyVoiceTuning();
 
@@ -190,6 +200,14 @@ public class BuddyVoiceService extends Service {
                     handler.post(() -> resumeAfterSpeech());
                 }
             });
+
+            if (pendingSpeech != null
+                    && !pendingSpeech.trim().isEmpty()
+                    && !stopping) {
+                String pending = pendingSpeech;
+                pendingSpeech = null;
+                handler.post(() -> speak(pending));
+            }
         });
     }
 
@@ -559,7 +577,7 @@ public class BuddyVoiceService extends Service {
         announce(STATE_SPEAKING, null, message);
 
         if (tts == null) {
-            resumeAfterSpeech();
+            pendingSpeech = message;
             return;
         }
 
