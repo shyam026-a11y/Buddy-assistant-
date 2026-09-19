@@ -43,6 +43,8 @@ public class BuddyVoiceService extends Service {
     private static final String PREF = "buddy_prefs";
     private static final String KEY_WAKE = "wake_mode";
     private static final String KEY_LANG = "language";
+    private static final String KEY_RATE = "speech_rate";
+    private static final String KEY_PITCH = "speech_pitch";
     private static final int NOTIFICATION_ID = 4242;
 
     private enum Mode { IDLE, WAKE, COMMAND }
@@ -123,6 +125,7 @@ public class BuddyVoiceService extends Service {
         tts = new TextToSpeech(this, status -> {
             if (status != TextToSpeech.SUCCESS) return;
             applyLanguage();
+            applyVoiceTuning();
             tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                 @Override public void onStart(String id) {
                     speaking = true;
@@ -142,8 +145,21 @@ public class BuddyVoiceService extends Service {
 
     private void applyLanguage() {
         try {
-            String tag = getSharedPreferences(PREF, MODE_PRIVATE).getString(KEY_LANG, "en-IN");
+            String tag = getSharedPreferences(PREF, MODE_PRIVATE)
+                    .getString(KEY_LANG, "en-IN");
             BuddyVoiceProfile.apply(tts, Locale.forLanguageTag(tag));
+        } catch (Throwable ignored) {}
+    }
+
+    private void applyVoiceTuning() {
+        if (tts == null) return;
+        try {
+            android.content.SharedPreferences p =
+                    getSharedPreferences(PREF, MODE_PRIVATE);
+            int rate = Math.max(0, Math.min(60, p.getInt(KEY_RATE, 30)));
+            int pitch = Math.max(0, Math.min(60, p.getInt(KEY_PITCH, 36)));
+            tts.setSpeechRate(0.75f + (rate / 60f) * 0.60f);
+            tts.setPitch(0.85f + (pitch / 60f) * 0.50f);
         } catch (Throwable ignored) {}
     }
 
@@ -296,6 +312,7 @@ public class BuddyVoiceService extends Service {
 
         cancelRecognition();
         applyLanguage();
+        applyVoiceTuning();
         speaking = true;
         announce(STATE_SPEAKING, null, message);
 
