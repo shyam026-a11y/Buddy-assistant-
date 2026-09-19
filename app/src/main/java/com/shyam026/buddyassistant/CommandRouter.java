@@ -96,6 +96,39 @@ public final class CommandRouter {
         return m.find() ? new WhatsAppRequest(m.group(2).trim(), m.group(1).trim()) : null;
     }
 
+    public static String mediaQuery(String s) {
+        String n = normalize(s);
+
+        if (n.equals("play") || n.equals("play music") || n.equals("music play")
+                || n.equals("resume music") || n.equals("music chala")
+                || n.equals("music chalao") || n.equals("play a song")
+                || n.equals("play song") || n.equals("gana chalao")
+                || n.equals("gana bajao")) {
+            return "";
+        }
+
+        for (String prefix : new String[]{
+                "play song ", "play a song ", "play music ",
+                "play ", "song play ", "song chalao ", "song bajao ",
+                "gana chalao ", "gana bajao ", "listen to ",
+                "music chalao ", "music bajao "
+        }) {
+            if (n.startsWith(prefix)) {
+                String q = n.substring(prefix.length()).trim();
+                if (!q.isEmpty() && !q.equals("music") && !q.equals("song")) {
+                    return q;
+                }
+            }
+        }
+
+        Matcher m = Pattern.compile("^(.+?)\\s+(?:chalao|bajao|play)$").matcher(n);
+        return m.find()
+                && !m.group(1).equals("music")
+                && !m.group(1).equals("song")
+                ? m.group(1).trim()
+                : null;
+    }
+
     public static String youtubeQuery(String s) {
         String n = normalize(s);
         for (String prefix : new String[]{
