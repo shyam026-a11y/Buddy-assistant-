@@ -15,7 +15,8 @@ public class BuddyVoiceInteractionSession extends VoiceInteractionSession {
             Intent i = new Intent(getContext(), BuddyVoiceService.class)
                     .setAction(BuddyVoiceService.ACTION_TAP_COMMAND)
                     .setPackage(getContext().getPackageName());
-            getContext().startForegroundService(i);
+            if (android.os.Build.VERSION.SDK_INT >= 26) getContext().startForegroundService(i);
+            else getContext().startService(i);
         } catch (Throwable ignored) {
             try {
                 Intent i = new Intent(getContext(), BuddyVoiceService.class)
