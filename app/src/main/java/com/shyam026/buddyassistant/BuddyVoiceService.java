@@ -88,13 +88,12 @@ public class BuddyVoiceService extends Service {
         if (ACTION_TAP_COMMAND.equals(action)) {
             String explicit = intent.getStringExtra(EXTRA_COMMAND);
             mode = Mode.COMMAND;
-            followUpAfterWake = false;
             stopSpeaking();
             cancelRecognition();
             if (explicit != null && !explicit.trim().isEmpty()) {
                 executeCommand(explicit.trim());
             } else {
-                startRecognition(false);
+                startRecognition();
             }
             return START_NOT_STICKY;
         }
@@ -232,7 +231,6 @@ public class BuddyVoiceService extends Service {
             finishCommand();
             return;
         }
-        handler.removeCallbacks(wakeRetry);
         cancelRecognition();
         announce(STATE_PROCESSING, command, null);
         CommandEngine.execute(this, command, message -> speak(message));
@@ -277,7 +275,6 @@ public class BuddyVoiceService extends Service {
     }
 
     private void cancelRecognition() {
-        handler.removeCallbacks(wakeRetry);
         if (recognizer != null) {
             try { recognizer.cancel(); } catch (Throwable ignored) {}
         }
