@@ -6,6 +6,7 @@ import android.util.Base64;
 
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
+
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
@@ -19,57 +20,87 @@ public final class BuddySecrets {
 
     private BuddySecrets() {}
 
-    public static void saveGeminiApiKey(Context context, String key) {
-        put(context, API_KEY, key == null ? "" : key.trim());
+    /**
+     * Saves the Gemini key encrypted with an Android Keystore AES key.
+     * The value is written synchronously and read back immediately so the
+     * caller can know whether the save actually succeeded.
+     */
+    public static boolean saveGeminiApiKey(Context context, String key) {
+        String clean = key == null ? "" : key.trim();
+        if (clean.isEmpty()) {
+            clearGeminiApiKey(context);
+            return false;
+        }
+        return putAndVerify(context, API_KEY, clean);
     }
 
     public static String getGeminiApiKey(Context context) {
         return get(context, API_KEY);
     }
 
-    public static void clearGeminiApiKey(Context context) {
-        getPrefs(context).edit().remove(API_KEY).apply();
+    public static boolean hasGeminiApiKey(Context context) {
+        return !getGeminiApiKey(context).trim().isEmpty();
     }
 
-    public static void saveModel(Context context, String model) {
-        String clean = model == null || model.trim().isEmpty() ? "gemini-2.5-pro" : model.trim();
-        put(context, MODEL, clean);
+    public static boolean saveModel(Context context, String model) {
+        String clean = model == null || model.trim().isEmpty()
+                ? "gemini-3.8-flash"
+                : model.trim();
+        return putAndVerify(context, MODEL, clean);
     }
 
     public static String getModel(Context context) {
         String model = get(context, MODEL);
-        return model.isEmpty() ? "gemini-2.5-pro" : model;
+        return model.isEmpty() ? "gemini-3.8-flash" : model;
     }
 
-    private static void put(Context context, String key, String value) {
+    public static boolean clearGeminiApiKey(Context context) {
+        return getPrefs(context).edit().remove(API_KEY).commit()
+                && !hasGeminiApiKey(context);
+    }
+
+    private static boolean putAndVerify(Context context, String key, String value) {
         try {
-            byte[] iv = new byte[12];
-            new java.security.SecureRandom().nextBytes(iv);
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey(), new GCMParameterSpec(128, iv));
-            byte[] encrypted = cipher.doFinal(value.getBytes(StandardCharsets.UTF_8));
-            String packed = Base64.encodeToString(iv, Base64.NO_WRAP)
-                    + "."
-                    + Base64.encodeToString(encrypted, Base64.NO_WRAP);
-            getPrefs(context).edit().putString(key, packed).apply();
-        } catch (Exception ignored) {
-            // Do not silently write the secret in plaintext.
-            getPrefs(context).edit().remove(key).apply();
+            String packed = encrypt(value);
+            boolean written = getPrefs(context).edit().putString(key, packed).commit();
+            if (!written) return false;
+            return value.equals(get(context, key));
+        } catch (Throwable ignored) {
+            return false;
         }
+    }
+
+    private static String encrypt(String value) throws Exception {
+        byte[] iv = new byte[12];
+        new java.security.SecureRandom().nextBytes(iv);
+
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey(), new GCMParameterSpec(128, iv));
+        byte[] encrypted = cipher.doFinal(value.getBytes(StandardCharsets.UTF_8));
+
+        return Base64.encodeToString(iv, Base64.NO_WRAP)
+                + "."
+                + Base64.encodeToString(encrypted, Base64.NO_WRAP);
     }
 
     private static String get(Context context, String key) {
         String packed = getPrefs(context).getString(key, "");
         if (packed == null || packed.isEmpty()) return "";
+
         try {
             String[] parts = packed.split("\\.", 2);
             if (parts.length != 2) return "";
+
             byte[] iv = Base64.decode(parts[0], Base64.NO_WRAP);
             byte[] encrypted = Base64.decode(parts[1], Base64.NO_WRAP);
+
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), new GCMParameterSpec(128, iv));
-            return new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);
-        } catch (Exception ignored) {
+            cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(),
+                    new GCMParameterSpec(128, iv));
+            return new String(
+                    cipher.doFinal(encrypted),
+                    StandardCharsets.UTF_8);
+        } catch (Throwable ignored) {
             return "";
         }
     }
@@ -77,26 +108,42 @@ public final class BuddySecrets {
     private static SecretKey getOrCreateKey() throws Exception {
         KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
         keyStore.load(null);
+
         if (keyStore.containsAlias(KEY_ALIAS)) {
-            KeyStore.Entry entry = keyStore.getEntry(KEY_ALIAS, null);
-            return ((KeyStore.SecretKeyEntry) entry).getSecretKey();
+            try {
+                KeyStore.Entry entry = keyStore.getEntry(KEY_ALIAS, null);
+                if (entry instanceof KeyStore.SecretKeyEntry) {
+                    return ((KeyStore.SecretKeyEntry) entry).getSecretKey();
+                }
+            } catch (Throwable ignored) {
+                // Recreate the entry below if the old one became unusable.
+            }
+
+            try {
+                keyStore.deleteEntry(KEY_ALIAS);
+            } catch (Throwable ignored) {}
         }
 
         KeyGenerator generator = KeyGenerator.getInstance(
                 android.security.keystore.KeyProperties.KEY_ALGORITHM_AES,
                 "AndroidKeyStore");
+
         generator.init(new android.security.keystore.KeyGenParameterSpec.Builder(
                 KEY_ALIAS,
                 android.security.keystore.KeyProperties.PURPOSE_ENCRYPT
                         | android.security.keystore.KeyProperties.PURPOSE_DECRYPT)
-                .setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setBlockModes(
+                        android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(
+                        android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setUserAuthenticationRequired(false)
                 .build());
+
         return generator.generateKey();
     }
 
     private static SharedPreferences getPrefs(Context context) {
-        return context.getApplicationContext().getSharedPreferences(PREF, Context.MODE_PRIVATE);
+        return context.getApplicationContext()
+                .getSharedPreferences(PREF, Context.MODE_PRIVATE);
     }
 }
