@@ -188,6 +188,15 @@ public class MainActivity extends Activity {
             languageButton.setText(language.equals("hi-IN") ? "HI" : "EN");
         });
         header.addView(languageButton);
+        Button settingsButton = button("⚙  Settings", 44, card2, 12);
+        settingsButton.setContentDescription("Open Buddy Settings");
+        settingsButton.setOnClickListener(v ->
+                startActivity(new Intent(this, BuddySettingsActivity.class)));
+        LinearLayout.LayoutParams settingsTopParams =
+                new LinearLayout.LayoutParams(dp(108), dp(44));
+        settingsTopParams.setMargins(dp(7), 0, 0, 0);
+        header.addView(settingsButton, settingsTopParams);
+
 
         content.addView(header);
         space(content, 18);
