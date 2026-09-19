@@ -1,5 +1,8 @@
-Buddy V3.5 Gemini Settings release build
-Version: 3.5-GeminiSettings
+Buddy V4.0 BuddyRefresh release build
+Version: 4.0-BuddyRefresh
 AI provider: direct Google Gemini API
+Gemini key storage: Android Keystore + write/read-back verification
 Model selection: runtime switchable Gemini catalog
-Settings: always-visible header button
+UI: refreshed dashboard and full settings control center
+Voice: persistent speech speed and pitch settings
+Wake behavior: no continuous SpeechRecognizer wake loop
