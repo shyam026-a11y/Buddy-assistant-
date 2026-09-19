@@ -55,12 +55,15 @@ jobs:
           grep -q 'BuddySecrets.getGeminiApiKey' app/src/main/java/com/shyam026/buddyassistant/CommandEngine.java
           grep -q 'x-goog-api-key' app/src/main/java/com/shyam026/buddyassistant/CommandEngine.java
           grep -q 'generativelanguage.googleapis.com' app/src/main/java/com/shyam026/buddyassistant/CommandEngine.java
-          grep -q 'gemini-2.5-pro' app/src/main/java/com/shyam026/buddyassistant/BuddySecrets.java
+          grep -q 'gemini-3.8-flash' app/src/main/java/com/shyam026/buddyassistant/BuddySecrets.java
           grep -q 'GeminiModelCatalog' app/src/main/java/com/shyam026/buddyassistant/GeminiModelCatalog.java
           grep -q 'supportedGenerationMethods' app/src/main/java/com/shyam026/buddyassistant/GeminiModelCatalog.java
-          grep -q 'Refresh Models' app/src/main/java/com/shyam026/buddyassistant/BuddySettingsActivity.java
+          grep -q 'SAVE & VERIFY KEY' app/src/main/java/com/shyam026/buddyassistant/BuddySettingsActivity.java
+          grep -q 'GeminiApiClient' app/src/main/java/com/shyam026/buddyassistant/BuddySettingsActivity.java
           grep -q 'Active Gemini model' app/src/main/java/com/shyam026/buddyassistant/BuddySettingsActivity.java
           grep -q 'Open Buddy Settings' app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
+          grep -q 'BuddySecrets.hasGeminiApiKey' app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
+          grep -q 'applyVoiceTuning' app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
           ! grep -Rqi 'openrouter' app/src/main/java
 
       - name: Lint
@@ -78,13 +81,13 @@ jobs:
           {
             echo "commit=$GITHUB_SHA"
             echo "apk_sha256=$SHA"
-            echo "versionName=3.5-GeminiSettings"
+            echo "versionName=4.0-BuddyRefresh"
           } > build-metadata.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Buddy-V3-Core
+          name: Buddy-V4-Verified
           path: |
             app/build/outputs/apk/debug/app-debug.apk
             build-metadata.txt
