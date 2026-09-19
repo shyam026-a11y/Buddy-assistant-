@@ -139,6 +139,7 @@ public class BuddyVoiceService extends Service {
         // If Android recreates a sticky wake service without its original Intent,
         // restore the user's explicit wake setting and continue listening.
         if (intent == null && wakeEnabled()) {
+            startAsForeground();
             mode = Mode.WAKE;
             scheduleWakeRecognition(150L);
             return START_STICKY;
