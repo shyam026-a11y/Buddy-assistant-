@@ -13,10 +13,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -32,7 +32,7 @@ jobs:
           "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: "8.11.1"
 
@@ -49,6 +49,11 @@ jobs:
           grep -q 'n.startsWith("hey buddy ")' app/src/main/java/com/shyam026/buddyassistant/CommandRouter.java
           grep -q 'STATE_PROCESSING' app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
           grep -q 'FOREGROUND_SERVICE_MICROPHONE' app/src/main/AndroidManifest.xml
+          ! grep -q 'startRecognition(true)' app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
+          ! grep -q 'scheduleWake' app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
+          ! grep -q 'pending_wake_start' app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
+          grep -q 'BuddySecrets.getApiKey' app/src/main/java/com/shyam026/buddyassistant/CommandEngine.java
+          ! grep -q 'getString(AI_KEY' app/src/main/java/com/shyam026/buddyassistant/CommandEngine.java
 
       - name: Lint
         run: gradle lintDebug --no-daemon --stacktrace
@@ -56,10 +61,24 @@ jobs:
       - name: Build APK
         run: gradle assembleDebug --no-daemon --stacktrace
 
+      - name: Build metadata
+        shell: bash
+        run: |
+          set -e
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          SHA="$(sha256sum "$APK" | awk '{print $1}')"
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "apk_sha256=$SHA"
+            echo "versionName=3.0-BuddyCore"
+          } > build-metadata.txt
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Buddy-V3-Core
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            build-metadata.txt
           if-no-files-found: error
           retention-days: 90

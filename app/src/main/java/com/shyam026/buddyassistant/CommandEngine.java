@@ -37,7 +37,6 @@ public final class CommandEngine {
     public interface Callback { void onResult(String message); }
 
     private static final String PREF = "buddy_prefs";
-    private static final String AI_KEY = "openrouter_key";
 
     private CommandEngine() {}
 
@@ -550,7 +549,8 @@ public final class CommandEngine {
     }
 
     private static void cloud(Context c, String raw, Callback cb) {
-        String key = c.getSharedPreferences(PREF, Context.MODE_PRIVATE).getString(AI_KEY, "").trim();
+        String key = BuddySecrets.getApiKey(c).trim();
+        String model = BuddySecrets.getModel(c).trim();
         if (key.isEmpty()) {
             done(c, cb, "AI key add nahi hai.");
             return;
@@ -559,7 +559,7 @@ public final class CommandEngine {
             HttpURLConnection h = null;
             try {
                 JSONObject body = new JSONObject()
-                        .put("model", "openrouter/free")
+                        .put("model", model.isEmpty() ? "openrouter/free" : model)
                         .put("temperature", 0.2)
                         .put("max_tokens", 80);
                 JSONArray messages = new JSONArray();

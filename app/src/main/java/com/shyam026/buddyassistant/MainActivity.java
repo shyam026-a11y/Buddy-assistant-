@@ -360,9 +360,9 @@ public class MainActivity extends Activity {
         final int green = Color.rgb(82, 220, 151);
 
         if (BuddyVoiceService.STATE_WAITING_WAKE.equals(state)) {
-            stateText.setText("● Waiting for “Hey Buddy”…");
+            stateText.setText("● Assistant mode enabled");
             stateText.setTextColor(cyan);
-            wakeText.setText("Wake mode armed. Normal speech is ignored.");
+            wakeText.setText("Microphone stays off until Buddy is explicitly invoked.");
             wakeText.setTextColor(muted);
             talkButton.setText("🎙  TAP TO TALK");
         } else if (BuddyVoiceService.STATE_LISTENING_COMMAND.equals(state)) {
@@ -511,19 +511,16 @@ private void startVoiceService(String action, String command) {
             boolean granted = grantResults.length > 0
                     && grantResults[0] == PackageManager.PERMISSION_GRANTED;
 
-            boolean pendingWake = false;
-
             if (!granted) {
                 if (wakeSwitch != null) {
                     wakeSwitch.setOnCheckedChangeListener(null);
                     wakeSwitch.setChecked(false);
                     wakeSwitch.setOnCheckedChangeListener((button, checked) -> {
                         prefs.edit().putBoolean(KEY_WAKE, checked).apply();
-                        if (checked) ensureMicrophoneThenStart(true);
-                        else {
-                            stopVoiceService();
-                            renderState(BuddyVoiceService.STATE_IDLE);
-                        }
+                        stopVoiceService();
+                        renderState(checked
+                                ? BuddyVoiceService.STATE_WAITING_WAKE
+                                : BuddyVoiceService.STATE_IDLE);
                     });
                 }
                 prefs.edit().putBoolean(KEY_WAKE, false).apply();
@@ -532,12 +529,7 @@ private void startVoiceService(String action, String command) {
                 return;
             }
 
-            if (pendingWake) {
-                prefs.edit().putBoolean(KEY_WAKE, true).apply();
-                renderState(BuddyVoiceService.STATE_WAITING_WAKE);
-            } else {
-                startVoiceService(BuddyVoiceService.ACTION_TAP_COMMAND, null);
-            }
+            startVoiceService(BuddyVoiceService.ACTION_TAP_COMMAND, null);
             return;
         }
 
