@@ -64,7 +64,7 @@ jobs:
               ("Buddy prefix", 'n.startsWith("buddy ")' in files["router"]),
               ("processing state", "STATE_PROCESSING" in files["voice"]),
               ("microphone foreground permission", "FOREGROUND_SERVICE_MICROPHONE" in files["manifest"]),
-              ("no legacy wake-recursion", "startRecognition(true)" not in files["voice"] and "scheduleWake" not in files["voice"]),
+              ("no legacy wake-recursion", "startRecognition(true)" not in files["voice"] and "pending_wake_start" not in files["main"]),
               ("no pending wake hack", "pending_wake_start" not in files["main"]),
               ("direct Gemini key access", "BuddySecrets.getGeminiApiKey" in files["engine"]),
               ("native Gemini auth", "x-goog-api-key" in files["engine"]),
@@ -121,13 +121,13 @@ jobs:
           {
             echo "commit=$GITHUB_SHA"
             echo "apk_sha256=$SHA"
-            echo "versionName=4.1-BuddyVoice"
+            echo "versionName=5.0-VerifiedVoiceUI"
           } > build-metadata.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Buddy-V4.1-Verified
+          name: Buddy-V5-Verified
           path: |
             app/build/outputs/apk/debug/app-debug.apk
             build-metadata.txt
