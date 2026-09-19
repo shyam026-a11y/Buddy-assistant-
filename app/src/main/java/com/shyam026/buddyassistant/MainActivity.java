@@ -1,6 +1,7 @@
 package com.shyam026.buddyassistant;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.role.RoleManager;
@@ -72,6 +73,7 @@ public class MainActivity extends Activity {
         }
     };
 
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences(PREF, MODE_PRIVATE);
