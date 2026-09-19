@@ -386,7 +386,13 @@ public class BuddySettingsActivity extends Activity {
                 if (position >= 0 && position < availableModels.size()) {
                     String selected = availableModels.get(position);
                     if (!selected.isEmpty()) {
-                        BuddySecrets.saveModel(BuddySettingsActivity.this, selected);
+                        boolean saved = BuddySecrets.saveModel(
+                                BuddySettingsActivity.this, selected);
+                        if (!saved && status != null) {
+                            status.setText(
+                                    "Model selection could not be saved.");
+                            status.setTextColor(danger);
+                        }
                     }
                     updateModelText();
                 }
@@ -547,11 +553,11 @@ public class BuddySettingsActivity extends Activity {
         infoCard.setBackground(rounded(card, line, 22));
         content.addView(infoCard);
 
-        section(infoCard, "Hands-free note",
-                "Buddy deliberately does not run SpeechRecognizer in a background wake loop.");
+        section(infoCard, "Hands-free mode",
+                "Enable “Hey Buddy” on the home screen to keep wake detection active.");
         infoCard.addView(text(
-                "For a true custom “Hey Buddy” wake word, a dedicated local hotword engine is required. " +
-                "The current path uses explicit tap/system-assistant invocation so the mic does not randomly cycle on and off.",
+                "Buddy now listens for the wake phrase only while wake mode is enabled. " +
+                "After “Hey Buddy”, it switches to command listening; after a reply, wake mode resumes.",
                 13, muted, false));
 
         gap(content, 15);
