@@ -56,6 +56,10 @@ jobs:
           grep -q 'x-goog-api-key' app/src/main/java/com/shyam026/buddyassistant/CommandEngine.java
           grep -q 'generativelanguage.googleapis.com' app/src/main/java/com/shyam026/buddyassistant/CommandEngine.java
           grep -q 'gemini-2.5-pro' app/src/main/java/com/shyam026/buddyassistant/BuddySecrets.java
+          grep -q 'GeminiModelCatalog' app/src/main/java/com/shyam026/buddyassistant/GeminiModelCatalog.java
+          grep -q 'supportedGenerationMethods' app/src/main/java/com/shyam026/buddyassistant/GeminiModelCatalog.java
+          grep -q 'Refresh Models' app/src/main/java/com/shyam026/buddyassistant/BuddySettingsActivity.java
+          grep -q 'Active Gemini model' app/src/main/java/com/shyam026/buddyassistant/BuddySettingsActivity.java
           ! grep -Rqi 'openrouter' app/src/main/java
 
       - name: Lint
@@ -73,7 +77,7 @@ jobs:
           {
             echo "commit=$GITHUB_SHA"
             echo "apk_sha256=$SHA"
-            echo "versionName=3.2-Gemini"
+            echo "versionName=3.1-GeminiModels"
           } > build-metadata.txt
 
       - name: Upload APK
