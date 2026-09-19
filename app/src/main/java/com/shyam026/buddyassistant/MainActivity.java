@@ -433,13 +433,9 @@ public class MainActivity extends Activity {
     }
 
     private void sendCommand(String command) {
-        startCommandListening();
-        getPreferences(MODE_PRIVATE).edit().putString("quick_command", command).apply();
-        mainRunCommand(command);
-    }
-
-    private void mainRunCommand(String command) {
-        startVoiceService(BuddyVoiceService.ACTION_TAP_COMMAND, command);
+        if (command == null || command.trim().isEmpty()) return;
+        getPreferences(MODE_PRIVATE).edit().putString("quick_command", command.trim()).apply();
+        startVoiceService(BuddyVoiceService.ACTION_TAP_COMMAND, command.trim());
     }
 
     private void requestPhonePermissions() {
