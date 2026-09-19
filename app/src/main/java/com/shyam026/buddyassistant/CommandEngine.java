@@ -44,6 +44,8 @@ public final class CommandEngine {
     public static void execute(Context context, String raw, Callback callback) {
         Context c = context.getApplicationContext();
         String s = CommandRouter.normalize(raw);
+        String wakeRemainder = CommandRouter.removeWakePhrase(s);
+        if (wakeRemainder != null) s = CommandRouter.normalize(wakeRemainder);
         if (s.isEmpty()) {
             done(c, callback, "Bolo, command clear nahi mila.");
             return;
