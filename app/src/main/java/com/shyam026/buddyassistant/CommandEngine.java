@@ -99,15 +99,15 @@ public final class CommandEngine {
                 return;
             }
 
-            String mediaQuery = CommandRouter.mediaQuery(s);
-            if (mediaQuery != null) {
-                playMedia(c, mediaQuery, callback);
-                return;
-            }
-
             String yt = CommandRouter.youtubeQuery(s);
             if (yt != null && !yt.isEmpty()) {
                 openYouTubeSearch(c, yt, callback, false);
+                return;
+            }
+
+            String mediaQuery = CommandRouter.mediaQuery(s);
+            if (mediaQuery != null) {
+                playMedia(c, mediaQuery, callback);
                 return;
             }
 
