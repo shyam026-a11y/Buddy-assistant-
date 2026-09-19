@@ -195,6 +195,7 @@ public class BuddySettingsActivity extends Activity {
         Button assistant = button("Set Buddy as default assistant");
         assistant.setOnClickListener(v -> {
             try {
+                if (android.os.Build.VERSION.SDK_INT < 29) return;
                 android.app.role.RoleManager rm = getSystemService(android.app.role.RoleManager.class);
                 if (rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT)) {
                     startActivityForResult(
