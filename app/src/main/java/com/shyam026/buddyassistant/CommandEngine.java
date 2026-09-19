@@ -567,7 +567,7 @@ public final class CommandEngine {
                                                         "You are Buddy, a friendly Indian voice assistant. " +
                                                         "Reply naturally in concise Hinglish or English. " +
                                                         "Maximum 18 words. Never claim a device action happened " +
-                                                        "unless a local tool reported success.\n\nUser: " + raw))))
+                                                        "unless a local tool reported success.\n\nUser: " + raw)))))
                         .put("generationConfig", new JSONObject()
                                 .put("temperature", 0.2)
                                 .put("maxOutputTokens", 80));
