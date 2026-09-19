@@ -1,8 +1,10 @@
-Buddy V4.1 BuddyVoice release build
-Version: 4.1-BuddyVoice
+Buddy V5.0 VerifiedVoiceUI release build
+Version: 5.0-VerifiedVoiceUI
 AI provider: direct Google Gemini API
-Gemini key storage: Android Keystore + crypto round-trip + persistence verification
-Gemini models: live API catalog with built-in fallbacks
-UI: single voice orb home screen
-Wake word: Hey Buddy detection in controlled wake mode
+Gemini key storage: Android Keystore with app-private fallback when device Keystore is unavailable
+Gemini key handling: save + read-back verification
+Model selection: runtime switchable Gemini catalog
+UI: single-circle voice assistant interface
+Wake word: controlled “Hey Buddy” SpeechRecognizer listener
 Voice: persistent speech speed and pitch settings
+Phone control: Accessibility + notification access + default assistant controls
