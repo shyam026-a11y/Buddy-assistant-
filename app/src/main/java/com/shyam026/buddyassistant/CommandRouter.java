@@ -96,6 +96,32 @@ public final class CommandRouter {
         return m.find() ? new WhatsAppRequest(m.group(2).trim(), m.group(1).trim()) : null;
     }
 
+    public static String appLaunchRequest(String s) {
+        String n = normalize(s);
+
+        for (String prefix : new String[]{
+                "open ", "launch ", "start ", "khol ", "khol do ",
+                "khol ke ", "chala ", "chalao ", "run "
+        }) {
+            if (n.startsWith(prefix)) {
+                String target = n.substring(prefix.length()).trim();
+                return target.isEmpty() ? null : target;
+            }
+        }
+
+        for (String suffix : new String[]{
+                " kholo", " khol do", " open karo", " launch karo",
+                " chalao", " chala do"
+        }) {
+            if (n.endsWith(suffix)) {
+                String target = n.substring(0, n.length() - suffix.length()).trim();
+                return target.isEmpty() ? null : target;
+            }
+        }
+
+        return null;
+    }
+
     public static String mediaQuery(String s) {
         String n = normalize(s);
 
