@@ -52,11 +52,26 @@ public final class CommandEngine {
                 done(c,callback,battery(c)); return;
             }
 
-            String yt=CommandRouter.youtubeQuery(s);
-            if(yt!=null&&!yt.isEmpty()){
-                if(launch(c,new Intent(Intent.ACTION_VIEW,Uri.parse("https://www.youtube.com/results?search_query="+Uri.encode(yt))),"YouTube search"))
-                    done(c,callback,"YouTube par "+yt+" search kar raha hoon.");
-                else done(c,callback,"YouTube search open nahi hua.");
+            String yt = CommandRouter.youtubeQuery(s);
+            if (yt != null && !yt.isEmpty()) {
+                Intent youtubeIntent = new Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(yt)));
+                youtubeIntent.setPackage("com.google.android.youtube");
+
+                boolean opened = launch(c, youtubeIntent, "YouTube search");
+                if (!opened) {
+                    opened = launch(
+                            c,
+                            new Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(yt))),
+                            "YouTube search");
+                }
+
+                done(c, callback, opened
+                        ? "YouTube par " + yt + " search kar raha hoon."
+                        : "YouTube search open nahi hua.");
                 return;
             }
 
