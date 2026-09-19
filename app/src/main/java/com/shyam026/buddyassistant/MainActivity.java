@@ -213,7 +213,7 @@ public class MainActivity extends Activity {
                         200));
         orb.setElevation(dp(14));
         orb.setContentDescription(
-                "Talk to Buddy");
+                "Tap to talk to Buddy");
 
         orb.setOnClickListener(v -> {
             if (BuddyVoiceService.STATE_LISTENING_COMMAND
