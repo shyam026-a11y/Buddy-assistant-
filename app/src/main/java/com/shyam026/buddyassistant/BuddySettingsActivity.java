@@ -6,18 +6,27 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
+import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
+import android.widget.Spinner;
 import android.widget.TextView;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 public class BuddySettingsActivity extends Activity {
     private EditText apiKey;
-    private EditText model;
+    private Spinner modelSpinner;
+    private ArrayAdapter<String> modelAdapter;
+    private final List<String> availableModels = new ArrayList<>();
+
     private SeekBar rate;
     private SeekBar pitch;
     private TextView status;
@@ -83,6 +92,54 @@ public class BuddySettingsActivity extends Activity {
         return t;
     }
 
+    private void setModels(List<String> models, String preferred) {
+        availableModels.clear();
+        if (models != null) {
+            for (String value : models) {
+                if (value == null) continue;
+                String clean = value.trim();
+                if (!clean.isEmpty() && !availableModels.contains(clean)) {
+                    availableModels.add(clean);
+                }
+            }
+        }
+
+        if (availableModels.isEmpty()) {
+            availableModels.addAll(GeminiModelCatalog.defaults());
+        }
+
+        String current = preferred == null || preferred.trim().isEmpty()
+                ? BuddySecrets.getModel(this)
+                : preferred.trim();
+
+        int index = availableModels.indexOf(current);
+        if (index < 0 && !current.isEmpty()) {
+            availableModels.add(0, current);
+            index = 0;
+        }
+        if (index < 0) index = 0;
+
+        modelAdapter.notifyDataSetChanged();
+        modelSpinner.setSelection(index, false);
+    }
+
+    private String selectedModel() {
+        int position = modelSpinner == null ? -1 : modelSpinner.getSelectedItemPosition();
+        if (position < 0 || position >= availableModels.size()) return "";
+        return availableModels.get(position);
+    }
+
+    private void refreshModels() {
+        GeminiModelCatalog.fetchAvailable(this, (models, error) -> {
+            setModels(models, BuddySecrets.getModel(this));
+            if (status != null) {
+                status.setText(error == null
+                        ? "Models refreshed. Active: " + BuddySecrets.getModel(this)
+                        : error);
+            }
+        });
+    }
+
     private void build() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -109,41 +166,80 @@ public class BuddySettingsActivity extends Activity {
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         content.addView(label("Gemini AI", 12, true));
-        content.addView(info("Gemini API key is encrypted with Android Keystore and is not written to Git."));
+        content.addView(info(
+                "Gemini API key is encrypted with Android Keystore. Select any compatible Gemini model and switch it anytime without reinstalling Buddy."));
+
         apiKey = field(BuddySecrets.getGeminiApiKey(this), "Gemini API key", true);
         content.addView(apiKey, new LinearLayout.LayoutParams(-1, dp(52)));
 
-        model = field(BuddySecrets.getModel(this), "gemini-2.5-pro", false);
-        LinearLayout.LayoutParams modelParams = new LinearLayout.LayoutParams(-1, dp(52));
-        modelParams.setMargins(0, dp(8), 0, 0);
-        content.addView(model, modelParams);
+        content.addView(label("Active Gemini model", 15, true));
+        modelSpinner = new Spinner(this);
+        modelAdapter = new ArrayAdapter<String>(
+                this,
+                android.R.layout.simple_spinner_item,
+                availableModels);
+        modelAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        modelSpinner.setAdapter(modelAdapter);
+        modelSpinner.setBackground(background(
+                Color.rgb(23, 30, 48),
+                Color.rgb(55, 66, 94),
+                16));
+        content.addView(modelSpinner, new LinearLayout.LayoutParams(-1, dp(52)));
+
+        modelSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (position < 0 || position >= availableModels.size()) return;
+                String selected = availableModels.get(position);
+                if (!selected.isEmpty()) {
+                    BuddySecrets.saveModel(BuddySettingsActivity.this, selected);
+                    if (status != null) status.setText("Active model: " + selected);
+                }
+            }
+
+            @Override public void onNothingSelected(AdapterView<?> parent) {}
+        });
 
         LinearLayout aiButtons = new LinearLayout(this);
         aiButtons.setPadding(0, dp(8), 0, 0);
-        Button save = button("Save");
+
+        Button save = button("Save Gemini Key");
         save.setOnClickListener(v -> {
             BuddySecrets.saveGeminiApiKey(this, apiKey.getText().toString());
-            BuddySecrets.saveModel(this, model.getText().toString());
-            status.setText("Saved securely.");
+            String selected = selectedModel();
+            if (!selected.isEmpty()) BuddySecrets.saveModel(this, selected);
+            status.setText("Gemini key saved securely.");
+            refreshModels();
         });
         aiButtons.addView(save, new LinearLayout.LayoutParams(0, dp(46), 1));
 
-        Button clear = button("Clear");
+        Button refresh = button("Refresh Models");
+        refresh.setOnClickListener(v -> {
+            BuddySecrets.saveGeminiApiKey(this, apiKey.getText().toString());
+            status.setText("Refreshing Gemini models…");
+            refreshModels();
+        });
+        LinearLayout.LayoutParams refreshParams = new LinearLayout.LayoutParams(dp(132), dp(46));
+        refreshParams.setMargins(dp(8), 0, 0, 0);
+        aiButtons.addView(refresh, refreshParams);
+        content.addView(aiButtons);
+
+        Button clear = button("Clear Gemini Key");
         clear.setOnClickListener(v -> {
             BuddySecrets.clearGeminiApiKey(this);
             apiKey.setText("");
+            setModels(GeminiModelCatalog.defaults(), BuddySecrets.getModel(this));
             status.setText("Gemini API key removed.");
         });
-        LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(dp(90), dp(46));
-        clearParams.setMargins(dp(8), 0, 0, 0);
-        aiButtons.addView(clear, clearParams);
-        content.addView(aiButtons);
+        LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(-1, dp(46));
+        clearParams.setMargins(0, dp(8), 0, 0);
+        content.addView(clear, clearParams);
 
-        Button test = button("Test Gemini");
+        Button test = button("Test Selected Model");
         test.setOnClickListener(v -> {
             BuddySecrets.saveGeminiApiKey(this, apiKey.getText().toString());
-            BuddySecrets.saveModel(this, model.getText().toString());
-            status.setText("Testing Gemini…");
+            String selected = selectedModel();
+            if (!selected.isEmpty()) BuddySecrets.saveModel(this, selected);
+            status.setText("Testing " + (selected.isEmpty() ? "Gemini" : selected) + "…");
             CommandEngine.execute(this, "hello", reply ->
                     status.setText(reply == null || reply.trim().isEmpty()
                             ? "No Gemini response."
@@ -227,7 +323,7 @@ public class BuddySettingsActivity extends Activity {
 
         content.addView(label("Diagnostics", 12, true));
         content.addView(info(
-                "Local actions do not require the AI key. Buddy only reports an action as done when its local operation returned success."));
+                "Local actions do not require Gemini. Buddy only reports an action as done when its local operation returned success."));
         status = new TextView(this);
         status.setText("Ready.");
         status.setTextColor(Color.rgb(82, 220, 151));
@@ -235,7 +331,9 @@ public class BuddySettingsActivity extends Activity {
         status.setPadding(0, dp(12), 0, 0);
         content.addView(status);
 
+        setModels(GeminiModelCatalog.defaults(), BuddySecrets.getModel(this));
         setContentView(root);
+        refreshModels();
     }
 
     @Override protected void onCreate(Bundle state) {
