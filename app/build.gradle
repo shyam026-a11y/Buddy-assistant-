@@ -8,8 +8,8 @@ android {
         applicationId "com.shyam026.buddyassistant"
         minSdk 23
         targetSdk 35
-        versionCode 5
-        versionName "3.0-BuddyCore"
+        versionCode 6
+        versionName "3.1-GeminiModels"
     }
 
     testOptions { unitTests.returnDefaultValues = true }
