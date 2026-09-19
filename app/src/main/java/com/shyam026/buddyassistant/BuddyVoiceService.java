@@ -87,12 +87,10 @@ public class BuddyVoiceService extends Service {
             getSharedPreferences(PREF, MODE_PRIVATE).edit().putBoolean(KEY_WAKE, true).apply();
             followUpAfterWake = false;
             stopSpeaking();
-            mode = Mode.WAKE;
+            mode = Mode.IDLE;
             cancelRecognition();
-            wakeRetryDelay = 400L;
             announce(STATE_WAITING_WAKE, null, null);
-            scheduleWake(60L);
-            return START_STICKY;
+            return START_NOT_STICKY;
         }
 
         if (ACTION_TAP_COMMAND.equals(action)) {
@@ -106,14 +104,12 @@ public class BuddyVoiceService extends Service {
             } else {
                 startRecognition(false);
             }
-            return START_STICKY;
+            return START_NOT_STICKY;
         }
 
-        boolean wake = getSharedPreferences(PREF, MODE_PRIVATE).getBoolean(KEY_WAKE, false);
-        mode = wake ? Mode.WAKE : Mode.IDLE;
-        announce(wake ? STATE_WAITING_WAKE : STATE_IDLE, null, null);
-        if (wake) scheduleWake(60L);
-        return START_STICKY;
+        mode = Mode.IDLE;
+        announce(STATE_IDLE, null, null);
+        return START_NOT_STICKY;
     }
 
     private void startAsForeground() {
