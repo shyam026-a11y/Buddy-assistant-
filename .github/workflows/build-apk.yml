@@ -14,35 +14,50 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
+
       - name: Android SDK
         shell: bash
         run: |
           SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager -type f -print -quit)"; fi
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager -type f -print -quit)"
+          fi
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
           "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
       - name: Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.11.1"
-      - name: Regression tests (100+ cases)
+
+      - name: Unit tests
         run: gradle test --no-daemon --stacktrace
-      - name: Source sanity checks
+
+      - name: Source architecture checks
         shell: bash
         run: |
           set -e
-          grep -q "ACTION_CALL" app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
-          grep -q "youtubeSearch" app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
-          grep -q "sendWhatsAppFlow" app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
-          grep -q "listenForWakeWord" app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
-          grep -q "max_tokens" app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
+          test "$(grep -c "new SpeechRecognizer" app/src/main/java/com/shyam026/buddyassistant/MainActivity.java || true)" -eq 0
+          grep -q "class BuddyVoiceService" app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
+          grep -q "SpeechRecognizer" app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
+          grep -q "ACTION_TAP_COMMAND" app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
+          grep -q "ACTION_ENABLE_WAKE" app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
+          grep -q "youtubeQuery" app/src/main/java/com/shyam026/buddyassistant/CommandRouter.java
+          grep -q "max_tokens" app/src/main/java/com/shyam026/buddyassistant/CommandEngine.java
+          grep -q "FOREGROUND_SERVICE_MICROPHONE" app/src/main/AndroidManifest.xml
+
+      - name: Lint
+        run: gradle lintDebug --no-daemon --stacktrace
+
       - name: Build APK
         run: gradle assembleDebug --no-daemon --stacktrace
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
