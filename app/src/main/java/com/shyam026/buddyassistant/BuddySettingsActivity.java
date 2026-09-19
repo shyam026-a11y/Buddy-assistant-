@@ -132,21 +132,21 @@ public class BuddySettingsActivity extends Activity {
         clear.setOnClickListener(v -> {
             BuddySecrets.clearGeminiApiKey(this);
             apiKey.setText("");
-            status.setText("API key removed.");
+            status.setText("Gemini API key removed.");
         });
         LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(dp(90), dp(46));
         clearParams.setMargins(dp(8), 0, 0, 0);
         aiButtons.addView(clear, clearParams);
         content.addView(aiButtons);
 
-        Button test = button("Test AI");
+        Button test = button("Test Gemini");
         test.setOnClickListener(v -> {
-            BuddySecrets.saveApiKey(this, apiKey.getText().toString());
+            BuddySecrets.saveGeminiApiKey(this, apiKey.getText().toString());
             BuddySecrets.saveModel(this, model.getText().toString());
             status.setText("Testing Gemini…");
             CommandEngine.execute(this, "hello", reply ->
                     status.setText(reply == null || reply.trim().isEmpty()
-                            ? "No AI response."
+                            ? "No Gemini response."
                             : "Gemini responded: " + reply));
         });
         LinearLayout.LayoutParams testParams = new LinearLayout.LayoutParams(-1, dp(46));
