@@ -140,8 +140,11 @@ public final class CommandRouter {
                 "music chalao ", "music bajao "
         }) {
             if (n.startsWith(prefix)) {
-                String q = n.substring(prefix.length()).trim();
-                if (!q.isEmpty() && !q.equals("music") && !q.equals("song")) {
+                String q = n.substring(prefix.length()).trim()
+                    .replaceAll("\\s+on youtube$", "")
+                    .trim();
+                if (!q.isEmpty() && !q.equals("music") && !q.equals("song")
+                        && !q.equals("youtube")) {
                     return q;
                 }
             }
