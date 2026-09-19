@@ -26,17 +26,17 @@ public final class GeminiModelCatalog {
 
     public static List<String> defaults() {
         ArrayList<String> models = new ArrayList<>();
-        models.add("gemini-2.5-pro");
-        models.add("gemini-2.5-flash");
-        models.add("gemini-2.5-flash-lite");
-        models.add("gemini-3.1-pro-preview");
-        models.add("gemini-3-flash-preview");
         models.add("gemini-3.8-flash");
         models.add("gemini-3.7-flash");
         models.add("gemini-3.6-flash");
         models.add("gemini-3.5-flash");
         models.add("gemini-3.5-flash-lite");
         models.add("gemini-3.1-flash-lite");
+        models.add("gemini-3.1-pro-preview");
+        models.add("gemini-3-flash-preview");
+        models.add("gemini-2.5-pro");
+        models.add("gemini-2.5-flash");
+        models.add("gemini-2.5-flash-lite");
         return models;
     }
 
@@ -46,27 +46,35 @@ public final class GeminiModelCatalog {
             try {
                 String key = BuddySecrets.getGeminiApiKey(context).trim();
                 if (key.isEmpty()) {
-                    post(callback, defaults(), "Gemini API key add nahi hai. Showing built-in models.");
+                    post(callback, defaults(),
+                            "Gemini API key add nahi hai. Showing built-in models.");
                     return;
                 }
 
+                // Google documents this endpoint as the Gemini OpenAI-compatibility
+                // model-list endpoint. It is useful here because it returns the
+                // models available to the exact API key saved on this device.
                 connection = (HttpURLConnection) new URL(
                         "https://generativelanguage.googleapis.com/v1beta/openai/models")
                         .openConnection();
                 connection.setRequestMethod("GET");
-                connection.setConnectTimeout(2500);
-                connection.setReadTimeout(5000);
+                connection.setConnectTimeout(5000);
+                connection.setReadTimeout(8000);
                 connection.setRequestProperty("Authorization", "Bearer " + key);
                 connection.setRequestProperty("Accept", "application/json");
 
                 int code = connection.getResponseCode();
                 if (code < 200 || code >= 300) {
-                    post(callback, defaults(), "Google model list unavailable. Showing built-in models.");
+                    String message = code == 401 || code == 403
+                            ? "API key rejected while loading models (HTTP " + code + ")."
+                            : "Google model list unavailable (HTTP " + code + ").";
+                    post(callback, defaults(), message);
                     return;
                 }
 
                 BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8));
+                        new InputStreamReader(
+                                connection.getInputStream(), StandardCharsets.UTF_8));
                 StringBuilder body = new StringBuilder();
                 String line;
                 while ((line = reader.readLine()) != null) body.append(line);
@@ -84,19 +92,20 @@ public final class GeminiModelCatalog {
                         String lowerId = id.toLowerCase(Locale.ROOT);
                         if (!lowerId.startsWith("gemini-")) continue;
 
-                        // Buddy currently uses generateContent text requests, so exclude
-                        // Live, image, TTS and transcription-only model families.
                         if (lowerId.contains("-live")
                                 || lowerId.contains("-tts")
                                 || lowerId.contains("-image")
                                 || lowerId.contains("-transcribe")
-                                || lowerId.contains("-translate")) continue;
+                                || lowerId.contains("-translate")) {
+                            continue;
+                        }
 
                         JSONArray methods = item.optJSONArray("supportedGenerationMethods");
                         boolean generateContent = methods == null;
                         if (methods != null) {
                             for (int j = 0; j < methods.length(); j++) {
-                                if ("generateContent".equalsIgnoreCase(methods.optString(j))) {
+                                if ("generateContent".equalsIgnoreCase(
+                                        methods.optString(j))) {
                                     generateContent = true;
                                     break;
                                 }
@@ -108,7 +117,8 @@ public final class GeminiModelCatalog {
                 }
 
                 if (result.isEmpty()) {
-                    post(callback, defaults(), "No compatible Gemini models returned. Showing built-in models.");
+                    post(callback, defaults(),
+                            "No compatible Gemini model returned. Showing built-in models.");
                     return;
                 }
 
@@ -116,11 +126,12 @@ public final class GeminiModelCatalog {
                 Collections.sort(models, String.CASE_INSENSITIVE_ORDER);
                 post(callback, models, null);
             } catch (Throwable t) {
-                post(callback, defaults(), "Could not refresh Gemini models. Showing built-in models.");
+                post(callback, defaults(),
+                        "Could not refresh Gemini models. Showing built-in models.");
             } finally {
                 if (connection != null) connection.disconnect();
             }
-        }, "buddy-gemini-models");
+        }, "buddy-gemini-models").start();
     }
 
     private static void post(Callback callback, List<String> models, String error) {
