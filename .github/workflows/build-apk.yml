@@ -65,6 +65,24 @@ jobs:
           grep -q 'BuddySecrets.hasGeminiApiKey' app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
           grep -q 'applyVoiceTuning' app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
           ! grep -Rqi 'openrouter' app/src/main/java
+          grep -q 'Tap to talk to Buddy' app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
+          grep -q 'ACTION_ENABLE_WAKE' app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
+          grep -q 'startWakeRecognition' app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
+          grep -q 'handleWakeTranscript' app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
+          grep -q 'split("\\\\.", 2)' app/src/main/java/com/shyam026/buddyassistant/BuddySecrets.java
+          ! grep -q 'TRY SAYING' app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
+
+      - name: 100x invariant sweep
+        shell: bash
+        run: |
+          set -e
+          for i in $(seq 1 100); do
+            grep -q 'SAVE & VERIFY KEY' app/src/main/java/com/shyam026/buddyassistant/BuddySettingsActivity.java
+            grep -q 'GeminiApiClient.test' app/src/main/java/com/shyam026/buddyassistant/BuddySettingsActivity.java
+            grep -q 'x-goog-api-key' app/src/main/java/com/shyam026/buddyassistant/GeminiApiClient.java
+            grep -q 'BuddySecrets.hasGeminiApiKey' app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
+            grep -q 'startWakeRecognition' app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
+          done
 
       - name: Lint
         run: gradle lintDebug --no-daemon --stacktrace
@@ -81,13 +99,13 @@ jobs:
           {
             echo "commit=$GITHUB_SHA"
             echo "apk_sha256=$SHA"
-            echo "versionName=4.0-BuddyRefresh"
+            echo "versionName=4.1-BuddyVoice"
           } > build-metadata.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Buddy-V4-Verified
+          name: Buddy-V4.1-Verified
           path: |
             app/build/outputs/apk/debug/app-debug.apk
             build-metadata.txt
