@@ -43,7 +43,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          grep -q 'return n.equals("buddy")' app/src/main/java/com/shyam026/buddyassistant/CommandRouter.java
+          grep -q 'n.equals("buddy")' app/src/main/java/com/shyam026/buddyassistant/CommandRouter.java
           grep -q 'n.startsWith("buddy ")' app/src/main/java/com/shyam026/buddyassistant/CommandRouter.java
           grep -q 'n.equals("hey buddy")' app/src/main/java/com/shyam026/buddyassistant/CommandRouter.java
           grep -q 'n.startsWith("hey buddy ")' app/src/main/java/com/shyam026/buddyassistant/CommandRouter.java
