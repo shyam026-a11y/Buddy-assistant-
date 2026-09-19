@@ -72,9 +72,26 @@ public class BuddyVoiceService extends Service {
 
         String action = intent == null ? null : intent.getAction();
 
-        if (ACTION_STOP.equals(action) || ACTION_DISABLE_WAKE.equals(action)) {
+        if (ACTION_DISABLE_WAKE.equals(action)) {
             getSharedPreferences(PREF, MODE_PRIVATE)
                     .edit().putBoolean(KEY_WAKE, false).apply();
+            stopVoiceService();
+            return START_NOT_STICKY;
+        }
+
+        if (ACTION_STOP.equals(action)) {
+            if (wakeEnabled()) {
+                stopSpeaking();
+                cancelRecognition();
+                mode = Mode.WAKE;
+                announce(
+                        STATE_WAITING_WAKE,
+                        null,
+                        "Wake listener is still on. Say Hey Buddy.");
+                scheduleWakeRecognition(250L);
+                return START_STICKY;
+            }
+
             stopVoiceService();
             return START_NOT_STICKY;
         }
