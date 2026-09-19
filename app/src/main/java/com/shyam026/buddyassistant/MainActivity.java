@@ -230,7 +230,7 @@ public class MainActivity extends Activity {
         LinearLayout wakeInfo = new LinearLayout(this);
         wakeInfo.setOrientation(LinearLayout.VERTICAL);
         wakeInfo.addView(text("Hey Buddy", 16, white, true));
-        wakeInfo.addView(text("Listen only for the wake phrase", 13, muted, false));
+        wakeInfo.addView(text("No background mic. Use Buddy as the default assistant.", 13, muted, false));
         wakeCard.addView(wakeInfo, new LinearLayout.LayoutParams(0, -2, 1));
 
         wakeSwitch = new Switch(this);
@@ -388,8 +388,8 @@ public class MainActivity extends Activity {
             stateText.setText("● Ready");
             stateText.setTextColor(cyan);
             wakeText.setText(wakeSwitch != null && wakeSwitch.isChecked()
-                    ? "Wake mode armed. Say “Hey Buddy” to activate."
-                    : "Wake mode is off. Tap to talk or enable “Hey Buddy”.");
+                    ? "Assistant mode is enabled. Microphone stays off until an assistant interaction starts."
+                    : "Tap to talk. Enable assistant mode for system assistant access.");
             talkButton.setText("🎙  TAP TO TALK");
         }
     }
@@ -451,14 +451,6 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 23
                 && checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
             missing.add(Manifest.permission.READ_CONTACTS);
-        }
-        if (Build.VERSION.SDK_INT >= 23
-                && checkSelfPermission(Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
-            missing.add(Manifest.permission.CALL_PHONE);
-        }
-        if (Build.VERSION.SDK_INT >= 23
-                && checkSelfPermission(Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
-            missing.add(Manifest.permission.SEND_SMS);
         }
         if (Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {

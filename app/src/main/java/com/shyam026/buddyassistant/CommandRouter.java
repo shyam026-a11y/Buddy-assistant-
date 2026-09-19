@@ -5,7 +5,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class CommandRouter {
-    private static final Pattern NUMBER = Pattern.compile("\\b(\\d{1,3})\\b");
     private CommandRouter() {}
 
     public static String normalize(String s) {
@@ -20,26 +19,34 @@ public final class CommandRouter {
                 .replace("what s app", "whatsapp");
     }
 
-    public static boolean isWakePhrase(String s) {
-        String n = normalize(s);
-        return n.equals("buddy")
-                || n.startsWith("buddy ")
-                || n.equals("hey buddy")
-                || n.startsWith("hey buddy ");
-    }
-
     public static String removeWakePhrase(String s) {
         String n = normalize(s);
         if (n.equals("buddy")) return "";
-        if (n.startsWith("buddy ")) return n.substring(6).trim();
+        if (n.startsWith("buddy ")) return n.substring("buddy ".length()).trim();
         if (n.equals("hey buddy")) return "";
-        if (n.startsWith("hey buddy ")) return n.substring(10).trim();
+        if (n.startsWith("hey buddy ")) return n.substring("hey buddy ".length()).trim();
+        return null;
+    }
+
+    public static boolean isWakePhrase(String s) {
+        return removeWakePhrase(s) != null;
+    }
+
+    public static String memoryText(String s) {
+        if (s == null) return null;
+        String n = normalize(s);
+        for (String prefix : new String[]{"remember that ", "remember "}) {
+            if (n.startsWith(prefix) && s.length() >= prefix.length()) {
+                return s.trim().substring(
+                        Math.min(s.trim().length(), prefix.length())).trim();
+            }
+        }
         return null;
     }
 
     public static Integer extractNumber(String s) {
         if (s == null) return null;
-        Matcher m = NUMBER.matcher(s);
+        Matcher m = Pattern.compile("\\b(\\d{1,3})\\b").matcher(s);
         return m.find() ? Integer.parseInt(m.group(1)) : null;
     }
 
@@ -53,17 +60,13 @@ public final class CommandRouter {
         Matcher m = Pattern.compile("^(.+?)\\s+(?:ko )?(?:call|phone)\\s+(?:karo|kar do|do)$").matcher(n);
         if (m.find()) return new CallRequest(m.group(1).trim());
         m = Pattern.compile("^(?:call|phone|dial)(?:\\s+karo)?\\s+(.+)$").matcher(n);
-        if (m.find()) return new CallRequest(m.group(1).trim());
-        return null;
+        return m.find() ? new CallRequest(m.group(1).trim()) : null;
     }
 
     public static final class SmsRequest {
         public final String target;
         public final String message;
-        SmsRequest(String target, String message) {
-            this.target = target;
-            this.message = message;
-        }
+        SmsRequest(String target, String message) { this.target = target; this.message = message; }
     }
 
     public static SmsRequest parseSms(String s) {
@@ -71,34 +74,26 @@ public final class CommandRouter {
         Matcher m = Pattern.compile("^(?:sms|send sms|text|message)\\s+(.+?)\\s+(?:ko|to)\\s+(.+)$").matcher(n);
         if (m.find()) return new SmsRequest(m.group(2).trim(), m.group(1).trim());
         m = Pattern.compile("^(.+?)\\s+ko\\s+(?:sms|message|text)\\s+(.+)$").matcher(n);
-        if (m.find()) return new SmsRequest(m.group(1).trim(), m.group(2).trim());
-        return null;
+        return m.find() ? new SmsRequest(m.group(1).trim(), m.group(2).trim()) : null;
     }
 
     public static final class WhatsAppRequest {
         public final String contact;
         public final String message;
-        WhatsAppRequest(String contact, String message) {
-            this.contact = contact;
-            this.message = message;
-        }
+        WhatsAppRequest(String contact, String message) { this.contact = contact; this.message = message; }
     }
 
     public static WhatsAppRequest parseWhatsApp(String s) {
         String n = normalize(s);
         String body = null;
         for (String prefix : new String[]{"whatsapp pe ", "whatsapp par ", "whatsapp me ", "whatsapp "}) {
-            if (n.startsWith(prefix)) {
-                body = n.substring(prefix.length()).trim();
-                break;
-            }
+            if (n.startsWith(prefix)) { body = n.substring(prefix.length()).trim(); break; }
         }
         if (body == null) return null;
         Matcher m = Pattern.compile("^(?:message|msg|text|send message)\\s+(.+?)\\s+(?:ko|to)\\s+(.+)$").matcher(body);
         if (m.find()) return new WhatsAppRequest(m.group(2).trim(), m.group(1).trim());
         m = Pattern.compile("^(?:message|msg|text|send message)\\s+(.+?)\\s+for\\s+(.+)$").matcher(body);
-        if (m.find()) return new WhatsAppRequest(m.group(2).trim(), m.group(1).trim());
-        return null;
+        return m.find() ? new WhatsAppRequest(m.group(2).trim(), m.group(1).trim()) : null;
     }
 
     public static String youtubeQuery(String s) {
@@ -122,13 +117,6 @@ public final class CommandRouter {
         for (String prefix : new String[]{"google pe search ", "google par search ", "google me search ", "google search ", "search ", "find "}) {
             if (n.startsWith(prefix)) return n.substring(prefix.length()).trim();
         }
-        return null;
-    }
-
-    public static String memoryText(String s) {
-        String n = normalize(s);
-        if (n.startsWith("remember that ")) return s.substring("remember that ".length()).trim();
-        if (n.startsWith("remember ")) return s.substring("remember ".length()).trim();
         return null;
     }
 }
