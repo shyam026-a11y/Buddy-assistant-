@@ -236,16 +236,7 @@ public class MainActivity extends Activity {
         wakeSwitch = new Switch(this);
         wakeSwitch.setText("");
         wakeSwitch.setChecked(prefs.getBoolean(KEY_WAKE, false));
-        wakeSwitch.setOnCheckedChangeListener((button, checked) -> {
-            prefs.edit().putBoolean(KEY_WAKE, checked).apply();
-            if (checked) {
-                ensureMicrophoneThenStart(true);
-            } else {
-                stopVoiceService();
-                renderState(BuddyVoiceService.STATE_IDLE);
-            }
-        });
-        wakeCard.addView(wakeSwitch);
+        wakeSwitch.setOnCheckedChangeListener((button, checked) -> {\n            prefs.edit().putBoolean(KEY_WAKE, checked).apply();\n            stopVoiceService();\n            renderState(checked ? BuddyVoiceService.STATE_WAITING_WAKE : BuddyVoiceService.STATE_IDLE);\n        });\n        wakeCard.addView(wakeSwitch);
         content.addView(wakeCard);
         space(content, 16);
 
@@ -307,8 +298,8 @@ public class MainActivity extends Activity {
         assistant.setOnClickListener(v ->requestAssistantRole());
         assistantRow.addView(assistant, new LinearLayout.LayoutParams(0, dp(44), 1));
 
-        Button settings = button("Voice settings", 44, card2, 12);
-        settings.setOnClickListener(v -> openVoiceSettings());
+        Button settings = button("Buddy Settings", 44, card2, 12);
+        settings.setOnClickListener(v -> startActivity(new Intent(this, BuddySettingsActivity.class)));
         LinearLayout.LayoutParams settingsParams = new LinearLayout.LayoutParams(0, dp(44), 1);
         settingsParams.setMargins(dp(7), 0, 0, 0);
         assistantRow.addView(settings, settingsParams);
@@ -398,19 +389,7 @@ public class MainActivity extends Activity {
         ensureMicrophoneThenStart(false);
     }
 
-    private void ensureMicrophoneThenStart(boolean wake) {
-        if (Build.VERSION.SDK_INT >= 23
-                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            getPreferences(MODE_PRIVATE).edit().putBoolean("pending_wake_start", wake).apply();
-            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
-            return;
-        }
-
-        startVoiceService(wake ? BuddyVoiceService.ACTION_ENABLE_WAKE
-                : BuddyVoiceService.ACTION_TAP_COMMAND, null);
-    }
-
-    private void startVoiceService(String action, String command) {
+    private void ensureMicrophoneThenStart(boolean wake) {\n        if (wake) {\n            prefs.edit().putBoolean(KEY_WAKE, true).apply();\n            renderState(BuddyVoiceService.STATE_WAITING_WAKE);\n            return;\n        }\n        if (Build.VERSION.SDK_INT >= 23\n                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {\n            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);\n            return;\n        }\n        startVoiceService(BuddyVoiceService.ACTION_TAP_COMMAND, null);\n    }\n\n    private void startVoiceService(String action, String command) {
         try {
             Intent i = new Intent(this, BuddyVoiceService.class);
             i.setAction(action);
@@ -513,13 +492,7 @@ public class MainActivity extends Activity {
             boolean granted = grantResults.length > 0
                     && grantResults[0] == PackageManager.PERMISSION_GRANTED;
 
-            boolean pendingWake = getPreferences(MODE_PRIVATE)
-                    .getBoolean("pending_wake_start", false);
-            getPreferences(MODE_PRIVATE).edit()
-                    .remove("pending_wake_start")
-                    .apply();
-
-            if (!granted) {
+            boolean pendingWake = false;\n\n            if (!granted) {
                 if (wakeSwitch != null) {
                     wakeSwitch.setOnCheckedChangeListener(null);
                     wakeSwitch.setChecked(false);
