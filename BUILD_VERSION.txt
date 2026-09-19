@@ -1,8 +1,8 @@
-Buddy V4.0 BuddyRefresh release build
-Version: 4.0-BuddyRefresh
+Buddy V4.1 BuddyVoice release build
+Version: 4.1-BuddyVoice
 AI provider: direct Google Gemini API
-Gemini key storage: Android Keystore + write/read-back verification
-Model selection: runtime switchable Gemini catalog
-UI: refreshed dashboard and full settings control center
+Gemini key storage: Android Keystore + crypto round-trip + persistence verification
+Gemini models: live API catalog with built-in fallbacks
+UI: single voice orb home screen
+Wake word: Hey Buddy detection in controlled wake mode
 Voice: persistent speech speed and pitch settings
-Wake behavior: no continuous SpeechRecognizer wake loop
