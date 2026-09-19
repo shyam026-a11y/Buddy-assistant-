@@ -58,6 +58,7 @@ public class BuddyVoiceService extends Service {
     private boolean speaking;
     private boolean stopping;
     private boolean recognizerStarting;
+    private long lastWakeTriggerAt;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -78,13 +79,15 @@ public class BuddyVoiceService extends Service {
         }
 
         if (ACTION_ENABLE_WAKE.equals(action)) {
-            getSharedPreferences(PREF, MODE_PRIVATE).edit().putBoolean(KEY_WAKE, true).apply();
+            getSharedPreferences(PREF, MODE_PRIVATE)
+                    .edit().putBoolean(KEY_WAKE, true).apply();
             stopSpeaking();
-            mode = Mode.IDLE;
             cancelRecognition();
-            announce(STATE_IDLE, null,
-                    "Assistant mode enabled. Mic stays off until Buddy is explicitly invoked.");
-            return START_NOT_STICKY;
+            mode = Mode.WAKE;
+            announce(STATE_WAITING_WAKE, null,
+                    "Hey Buddy mode on hai. Bolo.");
+            startWakeRecognition();
+            return START_STICKY;
         }
 
         if (ACTION_TAP_COMMAND.equals(action)) {
@@ -198,6 +201,20 @@ public class BuddyVoiceService extends Service {
                     recognizerStarting = false;
                     if (stopping || speaking) return;
 
+                    if (mode == Mode.WAKE
+                            && getSharedPreferences(PREF, MODE_PRIVATE)
+                            .getBoolean(KEY_WAKE, false)) {
+                        if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+                            mode = Mode.IDLE;
+                            announce(STATE_ERROR, null,
+                                    "Microphone permission required.");
+                            return;
+                        }
+                        announce(STATE_WAITING_WAKE, null, null);
+                        handler.postDelayed(() -> startWakeRecognition(), 350L);
+                        return;
+                    }
+
                     String msg = error == SpeechRecognizer.ERROR_NO_MATCH
                             ? "Voice samajh nahi aayi. Dobara bolo."
                             : error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS
@@ -215,9 +232,16 @@ public class BuddyVoiceService extends Service {
 
                     ArrayList<String> phrases = results == null
                             ? null
-                            : results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                            : results.getStringArrayList(
+                                    SpeechRecognizer.RESULTS_RECOGNITION);
 
                     String command = firstUsable(phrases);
+
+                    if (mode == Mode.WAKE) {
+                        handleWakeTranscript(command);
+                        return;
+                    }
+
                     if (command == null) {
                         finishCommand();
                     } else {
@@ -225,7 +249,15 @@ public class BuddyVoiceService extends Service {
                     }
                 }
 
-                @Override public void onPartialResults(Bundle partialResults) {}
+                @Override public void onPartialResults(Bundle partialResults) {
+                    if (stopping || speaking || mode != Mode.WAKE) return;
+                    ArrayList<String> phrases = partialResults == null
+                            ? null
+                            : partialResults.getStringArrayList(
+                                    SpeechRecognizer.RESULTS_RECOGNITION);
+                    String partial = firstUsable(phrases);
+                    if (partial != null) handleWakeTranscript(partial);
+                }
                 @Override public void onEvent(int eventType, Bundle params) {}
             });
         } catch (Throwable t) {
@@ -250,6 +282,81 @@ public class BuddyVoiceService extends Service {
         cancelRecognition();
         announce(STATE_PROCESSING, command, null);
         CommandEngine.execute(this, command, message -> speak(message));
+    }
+
+    private void handleWakeTranscript(String transcript) {
+        if (transcript == null || transcript.trim().isEmpty()) return;
+
+        String normalized = CommandRouter.normalize(transcript);
+        String remainder = CommandRouter.removeWakePhrase(normalized);
+        if (remainder == null) return;
+
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (now - lastWakeTriggerAt < 1200L) return;
+        lastWakeTriggerAt = now;
+
+        cancelRecognition();
+
+        if (remainder.trim().isEmpty()) {
+            speak("Haan, bolo.");
+        } else {
+            executeCommand(remainder);
+        }
+    }
+
+    private void startWakeRecognition() {
+        if (stopping || speaking || listening || recognizerStarting) return;
+
+        if (!getSharedPreferences(PREF, MODE_PRIVATE)
+                .getBoolean(KEY_WAKE, false)) {
+            mode = Mode.IDLE;
+            announce(STATE_IDLE, null, null);
+            return;
+        }
+
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            mode = Mode.IDLE;
+            announce(STATE_ERROR, null, "Microphone permission required.");
+            return;
+        }
+
+        if (recognizer == null) {
+            initRecognizer();
+            if (recognizer == null) return;
+        }
+
+        mode = Mode.WAKE;
+        recognizerStarting = true;
+
+        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                .putExtra(
+                        RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                .putExtra(
+                        RecognizerIntent.EXTRA_LANGUAGE,
+                        getSharedPreferences(PREF, MODE_PRIVATE)
+                                .getString(KEY_LANG, "en-IN"))
+                .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+                .putExtra(
+                        RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
+                        1200L)
+                .putExtra(
+                        RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
+                        900L)
+                .putExtra(
+                        RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,
+                        250L);
+
+        try {
+            recognizer.startListening(intent);
+        } catch (Throwable t) {
+            recognizerStarting = false;
+            listening = false;
+            handler.postDelayed(this::startWakeRecognition, 500L);
+        }
     }
 
     private void startRecognition() {
@@ -337,8 +444,16 @@ public class BuddyVoiceService extends Service {
         if (stopping) return;
         speaking = false;
 
-        mode = Mode.IDLE;
-        announce(STATE_IDLE, null, null);
+        boolean wake = getSharedPreferences(PREF, MODE_PRIVATE)
+                .getBoolean(KEY_WAKE, false);
+        if (wake) {
+            mode = Mode.WAKE;
+            announce(STATE_WAITING_WAKE, null, null);
+            handler.postDelayed(() -> startWakeRecognition(), 300L);
+        } else {
+            mode = Mode.IDLE;
+            announce(STATE_IDLE, null, null);
+        }
     }
 
     private void finishCommand() {
