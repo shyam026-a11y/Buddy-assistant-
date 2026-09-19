@@ -88,9 +88,11 @@ public class BuddyVoiceService extends Service {
             getSharedPreferences(PREF, MODE_PRIVATE).edit()
                     .putBoolean(KEY_WAKE, true)
                     .apply();
-            mode = Mode.WAKE;
             followUpAfterWake = false;
             stopSpeaking();
+            mode = Mode.WAKE;
+            stopListeningOnly();
+            retryDelay = 600L;
             scheduleWake(100);
             sendState(STATE_WAITING_WAKE, null, null);
             return START_STICKY;
@@ -109,6 +111,7 @@ public class BuddyVoiceService extends Service {
             mode = Mode.COMMAND;
             followUpAfterWake = false;
             stopSpeaking();
+            stopListeningOnly();
 
             if (explicitCommand != null && !explicitCommand.trim().isEmpty()) {
                 executeCommand(explicitCommand.trim());
