@@ -99,19 +99,15 @@ public final class CommandEngine {
                 return;
             }
 
+            String mediaQuery = CommandRouter.mediaQuery(s);
+            if (mediaQuery != null) {
+                playMedia(c, mediaQuery, callback);
+                return;
+            }
+
             String yt = CommandRouter.youtubeQuery(s);
             if (yt != null && !yt.isEmpty()) {
-                Intent i = new Intent(Intent.ACTION_VIEW,
-                        Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(yt)));
-                i.setPackage("com.google.android.youtube");
-                boolean opened = launch(c, i);
-                if (!opened) {
-                    opened = launch(c, new Intent(Intent.ACTION_VIEW,
-                            Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(yt))));
-                }
-                done(c, callback, opened
-                        ? "YouTube par " + yt + " search kar raha hoon."
-                        : "YouTube search open nahi hua.");
+                openYouTubeSearch(c, yt, callback, false);
                 return;
             }
 
@@ -255,23 +251,24 @@ public final class CommandEngine {
             }
 
             if (has(s, "next song", "next track", "agla gana")) {
-                media(c, KeyEvent.KEYCODE_MEDIA_NEXT);
-                done(c, callback, "Next track.");
+                done(c, callback,
+                        media(c, KeyEvent.KEYCODE_MEDIA_NEXT)
+                                ? "Next track command sent."
+                                : "Next track command send nahi hua.");
                 return;
             }
             if (has(s, "previous song", "previous track", "pichla gana")) {
-                media(c, KeyEvent.KEYCODE_MEDIA_PREVIOUS);
-                done(c, callback, "Previous track.");
+                done(c, callback,
+                        media(c, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+                                ? "Previous track command sent."
+                                : "Previous track command send nahi hua.");
                 return;
             }
             if (has(s, "pause music", "music pause")) {
-                media(c, KeyEvent.KEYCODE_MEDIA_PAUSE);
-                done(c, callback, "Music pause.");
-                return;
-            }
-            if (has(s, "play music", "music chala", "music play", "resume music")) {
-                media(c, KeyEvent.KEYCODE_MEDIA_PLAY);
-                done(c, callback, "Music play.");
+                done(c, callback,
+                        media(c, KeyEvent.KEYCODE_MEDIA_PAUSE)
+                                ? "Music pause command sent."
+                                : "Music pause command send nahi hua.");
                 return;
             }
 
@@ -295,26 +292,13 @@ public final class CommandEngine {
                 return;
             }
 
-            if (has(s, "open", "khol", "launch", "start", "chala")) {
-                String[][] apps = {
-                        {"youtube", "com.google.android.youtube"},
-                        {"chrome", "com.android.chrome"},
-                        {"whatsapp", "com.whatsapp"},
-                        {"instagram", "com.instagram.android"},
-                        {"spotify", "com.spotify.music"},
-                        {"telegram", "org.telegram.messenger"},
-                        {"maps", "com.google.android.apps.maps"},
-                        {"gmail", "com.google.android.gm"},
-                        {"calculator", "com.google.android.calculator"}
-                };
-                for (String[] a : apps) {
-                    if (s.contains(a[0])) {
-                        Intent i = c.getPackageManager().getLaunchIntentForPackage(a[1]);
-                        boolean ok = i != null && launch(c, i);
-                        done(c, callback, ok ? cap(a[0]) + " khol diya." : cap(a[0]) + " app nahi mila.");
-                        return;
-                    }
-                }
+            String appRequest = CommandRouter.appLaunchRequest(s);
+            if (appRequest != null && !appRequest.isEmpty()) {
+                boolean opened = openInstalledApp(c, appRequest);
+                done(c, callback, opened
+                        ? cap(appRequest) + " khol diya."
+                        : "App nahi mila: " + appRequest);
+                return;
             }
 
             String q = CommandRouter.googleSearchQuery(s);
@@ -474,11 +458,129 @@ public final class CommandEngine {
                 ? "Settings khol diya." : "Settings open nahi hua.");
     }
 
-    private static void media(Context c, int keyCode) {
+    private static boolean media(Context c, int keyCode) {
         AudioManager am = (AudioManager) c.getSystemService(Context.AUDIO_SERVICE);
-        if (am == null) return;
-        am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, keyCode));
-        am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, keyCode));
+        if (am == null) return false;
+
+        try {
+            am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, keyCode));
+            am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, keyCode));
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static void playMedia(Context c, String query, Callback cb) {
+        if (query == null) query = "";
+        query = query.trim();
+
+        if (query.isEmpty()) {
+            if (media(c, KeyEvent.KEYCODE_MEDIA_PLAY)) {
+                done(c, cb, "Music play command bhej diya.");
+                return;
+            }
+
+            String[] packages = {
+                    "com.google.android.apps.youtube.music",
+                    "com.spotify.music",
+                    "com.google.android.youtube"
+            };
+
+            for (String pkg : packages) {
+                Intent launch = c.getPackageManager().getLaunchIntentForPackage(pkg);
+                if (launch != null && launch(c, launch)) {
+                    done(c, cb, "Music app khol diya.");
+                    return;
+                }
+            }
+
+            done(c, cb, "Koi music app installed nahi mila.");
+            return;
+        }
+
+        openYouTubeSearch(c, query, cb, true);
+    }
+
+    private static void openYouTubeSearch(
+            Context c, String query, Callback cb, boolean tryPlay) {
+        Intent i = new Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse("https://www.youtube.com/results?search_query="
+                        + Uri.encode(query)));
+        i.setPackage("com.google.android.youtube");
+
+        boolean opened = launch(c, i);
+
+        if (!opened) {
+            opened = launch(c, new Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse("https://www.youtube.com/results?search_query="
+                            + Uri.encode(query))));
+        }
+
+        if (!opened) {
+            done(c, cb, "YouTube open nahi hua.");
+            return;
+        }
+
+        if (!tryPlay || !BuddyAccessibilityService.isEnabled()) {
+            done(c, cb, "YouTube par " + query + " search khol diya.");
+            return;
+        }
+
+        String finalQuery = query;
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            BuddyAccessibilityService service = BuddyAccessibilityService.get();
+            boolean clicked = service != null && service.clickText(finalQuery);
+            done(c, cb, clicked
+                    ? "YouTube par " + finalQuery + " play kar diya."
+                    : "YouTube par " + finalQuery + " ke results khol diye. First result tap nahi ho saka.");
+        }, 1200L);
+    }
+
+    private static boolean openInstalledApp(Context c, String wanted) {
+        String target = CommandRouter.normalize(wanted);
+        if (target.isEmpty()) return false;
+
+        android.content.pm.PackageManager pm = c.getPackageManager();
+        java.util.List<android.content.pm.ResolveInfo> apps =
+                pm.queryIntentActivities(
+                        new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER),
+                        0);
+
+        android.content.pm.ResolveInfo best = null;
+        int bestScore = 0;
+
+        for (android.content.pm.ResolveInfo info : apps) {
+            CharSequence labelCs = info.loadLabel(pm);
+            String label = CommandRouter.normalize(
+                    labelCs == null ? "" : labelCs.toString());
+
+            String pkg = CommandRouter.normalize(
+                    info.activityInfo == null ? "" : info.activityInfo.packageName);
+
+            int score = 0;
+            if (label.equals(target)) score = 100;
+            else if (label.startsWith(target)) score = 80;
+            else if (label.contains(target)) score = 60;
+            else if (pkg.contains(target.replace(" ", ""))) score = 40;
+
+            if (score > bestScore) {
+                bestScore = score;
+                best = info;
+            }
+        }
+
+        if (best == null || best.activityInfo == null) return false;
+
+        Intent launch = new Intent(Intent.ACTION_MAIN);
+        launch.addCategory(Intent.CATEGORY_LAUNCHER);
+        launch.setClassName(
+                best.activityInfo.packageName,
+                best.activityInfo.name);
+
+        return launch(c, launch);
     }
 
     private static void doCall(Context c, String target, Callback cb) {
