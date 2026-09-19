@@ -20,11 +20,10 @@ import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.view.animation.AccelerateDecelerateInterpolator;
-import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.Switch;
+import android.widget.Space;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -39,48 +38,60 @@ public class MainActivity extends Activity {
 
     private SharedPreferences prefs;
     private TextView stateText;
-    private TextView transcriptText;
-    private TextView replyText;
     private TextView hintText;
-    private Switch wakeSwitch;
+    private TextView userText;
+    private TextView buddyText;
+    private TextView wakeText;
     private ImageView orb;
 
-    private ObjectAnimator pulseX;
-    private ObjectAnimator pulseY;
+    private ObjectAnimator pulse;
+    private String language = "en-IN";
 
-    private final BroadcastReceiver statusReceiver = new BroadcastReceiver() {
-        @Override public void onReceive(Context context, Intent intent) {
-            if (!BuddyVoiceService.ACTION_STATUS.equals(intent.getAction())) return;
+    private final BroadcastReceiver statusReceiver =
+            new BroadcastReceiver() {
+                @Override public void onReceive(
+                        Context context, Intent intent) {
+                    if (!BuddyVoiceService.ACTION_STATUS.equals(
+                            intent.getAction())) return;
 
-            String state = intent.getStringExtra(BuddyVoiceService.EXTRA_STATE);
-            String transcript = intent.getStringExtra(BuddyVoiceService.EXTRA_TRANSCRIPT);
-            String reply = intent.getStringExtra(BuddyVoiceService.EXTRA_REPLY);
+                    String state = intent.getStringExtra(
+                            BuddyVoiceService.EXTRA_STATE);
+                    String transcript = intent.getStringExtra(
+                            BuddyVoiceService.EXTRA_TRANSCRIPT);
+                    String reply = intent.getStringExtra(
+                            BuddyVoiceService.EXTRA_REPLY);
 
-            if (transcript != null && !transcript.trim().isEmpty()) {
-                transcriptText.setText(transcript);
-            }
-            if (reply != null && !reply.trim().isEmpty()) {
-                replyText.setText(reply);
-            }
+                    if (transcript != null
+                            && !transcript.trim().isEmpty()) {
+                        userText.setText(transcript);
+                    }
 
-            renderState(state == null
-                    ? BuddyVoiceService.STATE_IDLE
-                    : state);
-        }
-    };
+                    if (reply != null
+                            && !reply.trim().isEmpty()) {
+                        buddyText.setText(reply);
+                    }
+
+                    renderState(state == null
+                            ? BuddyVoiceService.STATE_IDLE
+                            : state);
+                }
+            };
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
         prefs = getSharedPreferences(PREF, MODE_PRIVATE);
+        language = prefs.getString(KEY_LANG, "en-IN");
 
         getWindow().setStatusBarColor(Color.rgb(7, 9, 16));
         getWindow().setNavigationBarColor(Color.rgb(7, 9, 16));
 
         buildUi();
 
-        IntentFilter filter =
-                new IntentFilter(BuddyVoiceService.ACTION_STATUS);
+        IntentFilter filter = new IntentFilter(
+                BuddyVoiceService.ACTION_STATUS);
+
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(
                     statusReceiver,
@@ -93,18 +104,8 @@ public class MainActivity extends Activity {
 
     private int dp(int value) {
         return Math.round(
-                value * getResources().getDisplayMetrics().density);
-    }
-
-    private GradientDrawable rounded(
-            int fill, int stroke, int radius) {
-        GradientDrawable d = new GradientDrawable();
-        d.setColor(fill);
-        d.setCornerRadius(dp(radius));
-        if (stroke != 0) {
-            d.setStroke(dp(1), stroke);
-        }
-        return d;
+                value * getResources()
+                        .getDisplayMetrics().density);
     }
 
     private GradientDrawable gradient(
@@ -122,301 +123,305 @@ public class MainActivity extends Activity {
         t.setText(value);
         t.setTextSize(size);
         t.setTextColor(color);
-        t.setTypeface(null,
+        t.setGravity(Gravity.CENTER);
+        t.setTypeface(
+                null,
                 bold ? Typeface.BOLD : Typeface.NORMAL);
         return t;
     }
 
     private void buildUi() {
         final int bg = Color.rgb(7, 9, 16);
-        final int card = Color.rgb(14, 18, 29);
-        final int line = Color.rgb(42, 51, 75);
         final int white = Color.WHITE;
-        final int muted = Color.rgb(150, 163, 190);
-        final int cyan = Color.rgb(90, 209, 255);
+        final int muted = Color.rgb(151, 162, 188);
+        final int cyan = Color.rgb(92, 208, 255);
         final int green = Color.rgb(82, 220, 151);
-        final int accent = Color.rgb(111, 91, 255);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.CENTER_HORIZONTAL);
         root.setBackgroundColor(bg);
 
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        top.setPadding(dp(16), dp(14), dp(16), dp(8));
+        top.setPadding(dp(18), dp(12), dp(16), 0);
 
-        LinearLayout brand = new LinearLayout(this);
-        brand.setOrientation(LinearLayout.VERTICAL);
-        brand.setPadding(dp(10), 0, 0, 0);
-        brand.addView(text("BUDDY", 20, white, true));
-        TextView sub = text(
-                "voice assistant", 11, muted, false);
-        brand.addView(sub);
-        top.addView(brand, new LinearLayout.LayoutParams(
-                0, -2, 1));
+        TextView brand = text("BUDDY", 20, white, true);
+        brand.setGravity(Gravity.CENTER_VERTICAL);
+        top.addView(
+                brand,
+                new LinearLayout.LayoutParams(
+                        0, dp(46), 1));
 
-        Button settings = new Button(this);
-        settings.setText("⚙");
-        settings.setTextSize(19);
-        settings.setTextColor(white);
-        settings.setAllCaps(false);
-        settings.setMinHeight(0);
-        settings.setMinWidth(0);
-        settings.setPadding(0, 0, 0, 0);
-        settings.setGravity(Gravity.CENTER);
-        settings.setBackground(rounded(
-                Color.rgb(22, 28, 45), line, 16));
+        ImageView settings = new ImageView(this);
+        settings.setImageResource(
+                android.R.drawable.ic_menu_preferences);
+        settings.setPadding(dp(11), dp(11), dp(11), dp(11));
+        settings.setBackground(
+                gradient(
+                        Color.rgb(21, 28, 44),
+                        Color.rgb(29, 35, 55),
+                        18));
         settings.setContentDescription(
                 "Open Buddy Settings");
-        settings.setOnClickListener(v -> startActivity(
-                new Intent(this, BuddySettingsActivity.class)));
-        top.addView(settings, new LinearLayout.LayoutParams(
-                dp(48), dp(48)));
+        settings.setOnClickListener(v ->
+                startActivity(
+                        new Intent(
+                                this,
+                                BuddySettingsActivity.class)));
 
-        root.addView(top, new LinearLayout.LayoutParams(
-                -1, -2));
+        top.addView(
+                settings,
+                new LinearLayout.LayoutParams(
+                        dp(48), dp(48)));
 
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
+        root.addView(top);
 
-        LinearLayout body = new LinearLayout(this);
-        body.setOrientation(LinearLayout.VERTICAL);
-        body.setGravity(Gravity.CENTER_HORIZONTAL);
-        body.setPadding(dp(20), dp(8), dp(20), dp(28));
-        scroll.addView(body);
+        LinearLayout center = new LinearLayout(this);
+        center.setOrientation(LinearLayout.VERTICAL);
+        center.setGravity(Gravity.CENTER_HORIZONTAL);
+        center.setPadding(
+                dp(20), dp(10), dp(20), dp(10));
 
-        TextView status = text(
-                "●  READY", 12, cyan, true);
-        status.setLetterSpacing(0.1f);
-        body.addView(status, new LinearLayout.LayoutParams(
-                -2, -2));
+        center.addView(
+                new Space(this),
+                new LinearLayout.LayoutParams(
+                        1, 0, 1));
+
+        TextView title = text(
+                "How can I help?",
+                27, white, true);
+        center.addView(
+                title,
+                new LinearLayout.LayoutParams(
+                        -1, dp(46)));
+
+        hintText = text(
+                "Tap the circle and speak",
+                13, muted, false);
+        center.addView(
+                hintText,
+                new LinearLayout.LayoutParams(
+                        -1, dp(34)));
 
         orb = new ImageView(this);
         orb.setImageResource(R.drawable.buddy_logo);
-        orb.setPadding(dp(24), dp(24), dp(24), dp(24));
-        orb.setBackground(gradient(
-                Color.rgb(68, 52, 194),
-                Color.rgb(44, 184, 226), 180));
+        orb.setPadding(dp(25), dp(25), dp(25), dp(25));
+        orb.setBackground(
+                gradient(
+                        Color.rgb(82, 59, 224),
+                        Color.rgb(43, 188, 230),
+                        200));
+        orb.setElevation(dp(14));
+        orb.setContentDescription(
+                "Talk to Buddy");
 
-        LinearLayout.LayoutParams orbP =
+        orb.setOnClickListener(v -> {
+            if (BuddyVoiceService.STATE_LISTENING_COMMAND
+                    .equals(currentState)) {
+                stopVoiceService();
+                renderState(
+                        prefs.getBoolean(
+                                KEY_WAKE, false)
+                                ? BuddyVoiceService.STATE_WAITING_WAKE
+                                : BuddyVoiceService.STATE_IDLE);
+            } else {
+                startCommandListening();
+            }
+        });
+
+        LinearLayout.LayoutParams orbParams =
                 new LinearLayout.LayoutParams(
-                        dp(210), dp(210));
-        orbP.setMargins(0, dp(28), 0, dp(22));
-        orb.setContentDescription("Tap to talk to Buddy");
-        orb.setOnClickListener(v -> ensureMicrophoneThenStart(false));
-        body.addView(orb, orbP);
+                        dp(190), dp(190));
+        orbParams.setMargins(0, dp(15), 0, dp(16));
+        center.addView(orb, orbParams);
 
         stateText = text(
-                "Ready", 27, white, true);
-        stateText.setGravity(Gravity.CENTER);
-        body.addView(stateText);
+                "Ready",
+                19, white, true);
+        center.addView(
+                stateText,
+                new LinearLayout.LayoutParams(
+                        -1, dp(36)));
 
-        hintText = text(
-                "Tap the circle and speak.", 14, muted, false);
-        hintText.setGravity(Gravity.CENTER);
-        hintText.setPadding(0, dp(6), 0, 0);
-        body.addView(hintText);
+        wakeText = text(
+                "Hey Buddy is off",
+                12, muted, false);
+        center.addView(
+                wakeText,
+                new LinearLayout.LayoutParams(
+                        -1, dp(32)));
 
-        LinearLayout conversation = new LinearLayout(this);
-        conversation.setOrientation(LinearLayout.VERTICAL);
-        conversation.setPadding(dp(16), dp(14), dp(16), dp(14));
-        conversation.setBackground(rounded(card, line, 22));
-        LinearLayout.LayoutParams cp =
-                new LinearLayout.LayoutParams(-1, -2);
-        cp.setMargins(0, dp(26), 0, 0);
-        body.addView(conversation, cp);
+        center.addView(
+                new Space(this),
+                new LinearLayout.LayoutParams(
+                        1, 0, 1));
 
-        TextView youLabel = text(
-                "YOU", 10, muted, true);
-        youLabel.setLetterSpacing(0.08f);
-        conversation.addView(youLabel);
+        root.addView(
+                center,
+                new LinearLayout.LayoutParams(
+                        -1, 0, 1));
 
-        transcriptText = text(
-                "—", 14, white, false);
-        transcriptText.setPadding(
-                0, dp(4), 0, dp(12));
-        conversation.addView(transcriptText);
+        LinearLayout transcript = new LinearLayout(this);
+        transcript.setOrientation(LinearLayout.VERTICAL);
+        transcript.setPadding(
+                dp(20), dp(8), dp(20), dp(14));
 
-        TextView buddyLabel = text(
-                "BUDDY", 10, muted, true);
-        buddyLabel.setLetterSpacing(0.08f);
-        conversation.addView(buddyLabel);
+        userText = text(
+                "",
+                13, muted, false);
+        userText.setGravity(Gravity.START);
+        transcript.addView(userText);
 
-        replyText = text(
-                "Bolo. Main sun rahi hoon.", 15, white, true);
-        replyText.setPadding(0, dp(4), 0, 0);
-        conversation.addView(replyText);
+        buddyText = text(
+                "",
+                14, white, false);
+        buddyText.setGravity(Gravity.START);
+        buddyText.setPadding(
+                0, dp(5), 0, 0);
+        transcript.addView(buddyText);
 
-        LinearLayout wake = new LinearLayout(this);
-        wake.setGravity(Gravity.CENTER_VERTICAL);
-        wake.setPadding(dp(15), dp(10), dp(10), dp(10));
-        wake.setBackground(rounded(card, line, 20));
-        LinearLayout.LayoutParams wp =
-                new LinearLayout.LayoutParams(-1, -2);
-        wp.setMargins(0, dp(12), 0, 0);
-        body.addView(wake, wp);
-
-        LinearLayout wakeCopy = new LinearLayout(this);
-        wakeCopy.setOrientation(LinearLayout.VERTICAL);
-        wakeCopy.addView(text(
-                "Hey Buddy wake word", 14, white, true));
-        wakeCopy.addView(text(
-                "Listen for “Hey Buddy” while this mode is on.",
-                12, muted, false));
-        wake.addView(wakeCopy,
-                new LinearLayout.LayoutParams(0, -2, 1));
-
-        wakeSwitch = new Switch(this);
-        wakeSwitch.setChecked(
-                prefs.getBoolean(KEY_WAKE, false));
-        wakeSwitch.setOnCheckedChangeListener(
-                (button, checked) -> {
-                    prefs.edit()
-                            .putBoolean(KEY_WAKE, checked)
-                            .apply();
-
-                    if (checked) {
-                        ensureMicrophoneThenStart(true);
-                    } else {
-                        stopVoiceService();
-                        renderState(
-                                BuddyVoiceService.STATE_IDLE);
-                    }
-                });
-        wake.addView(wakeSwitch);
-
-        root.addView(scroll, new LinearLayout.LayoutParams(
-                -1, 0, 1));
+        root.addView(
+                transcript,
+                new LinearLayout.LayoutParams(
+                        -1, dp(64)));
 
         setContentView(root);
-        renderState(BuddyVoiceService.STATE_IDLE);
-        startOrbAnimation();
 
-        // Keep the chosen language without adding visual clutter.
-        if (!prefs.contains(KEY_LANG)) {
-            prefs.edit().putString(KEY_LANG, "en-IN").apply();
+        currentState = BuddyVoiceService.STATE_IDLE;
+        renderState(currentState);
+
+        if (prefs.getBoolean(KEY_WAKE, false)) {
+            startVoiceService(
+                    BuddyVoiceService.ACTION_ENABLE_WAKE,
+                    null);
         }
-    }
 
-    private void startOrbAnimation() {
-        stopOrbAnimation();
-        if (orb == null) return;
-
-        pulseX = ObjectAnimator.ofFloat(
+        pulse = ObjectAnimator.ofFloat(
                 orb, View.SCALE_X, 1.0f, 1.035f, 1.0f);
-        pulseY = ObjectAnimator.ofFloat(
-                orb, View.SCALE_Y, 1.0f, 1.035f, 1.0f);
-
-        for (ObjectAnimator a :
-                new ObjectAnimator[]{pulseX, pulseY}) {
-            a.setDuration(1800L);
-            a.setRepeatCount(ObjectAnimator.INFINITE);
-            a.setInterpolator(
-                    new AccelerateDecelerateInterpolator());
-            a.start();
-        }
+        pulse.setDuration(1750L);
+        pulse.setRepeatCount(ObjectAnimator.INFINITE);
+        pulse.setInterpolator(
+                new AccelerateDecelerateInterpolator());
+        pulse.start();
     }
 
-    private void stopOrbAnimation() {
-        if (pulseX != null) pulseX.cancel();
-        if (pulseY != null) pulseY.cancel();
-        pulseX = null;
-        pulseY = null;
-    }
+    private String currentState =
+            BuddyVoiceService.STATE_IDLE;
 
     private void renderState(String state) {
-        if (stateText == null) return;
+        currentState = state == null
+                ? BuddyVoiceService.STATE_IDLE
+                : state;
 
-        final int white = Color.WHITE;
-        final int muted = Color.rgb(150, 163, 190);
-        final int cyan = Color.rgb(90, 209, 255);
-        final int green = Color.rgb(82, 220, 151);
-        final int danger = Color.rgb(255, 113, 131);
+        if (stateText == null || hintText == null
+                || wakeText == null) return;
 
-        if (BuddyVoiceService.STATE_WAITING_WAKE.equals(state)) {
-            stateText.setText("Waiting for “Hey Buddy”");
-            stateText.setTextColor(cyan);
+        if (BuddyVoiceService.STATE_WAITING_WAKE.equals(
+                currentState)) {
+            stateText.setText("Listening for “Hey Buddy”");
+            stateText.setTextColor(Color.rgb(92, 208, 255));
             hintText.setText(
-                    "Wake listening is active.");
-            if (orb != null) {
-                orb.setBackground(gradient(
-                        Color.rgb(50, 43, 150),
-                        Color.rgb(33, 144, 180), 180));
-            }
-        } else if (BuddyVoiceService.STATE_LISTENING_COMMAND.equals(state)) {
-            stateText.setText("Listening…");
-            stateText.setTextColor(cyan);
-            hintText.setText("Speak your command now.");
-        } else if (BuddyVoiceService.STATE_PROCESSING.equals(state)) {
-            stateText.setText("Working…");
-            stateText.setTextColor(cyan);
-            hintText.setText("Executing your request.");
-        } else if (BuddyVoiceService.STATE_SPEAKING.equals(state)) {
-            stateText.setText("Buddy is speaking");
-            stateText.setTextColor(green);
-            hintText.setText("I'm listening again after this reply.");
-        } else if (BuddyVoiceService.STATE_ERROR.equals(state)) {
-            stateText.setText("Something needs attention");
-            stateText.setTextColor(danger);
-            hintText.setText(
-                    "Check microphone permission and voice recognition.");
-        } else {
-            stateText.setText("Ready");
-            stateText.setTextColor(white);
-            hintText.setText(
-                    wakeSwitch != null && wakeSwitch.isChecked()
-                            ? "Wake word mode is on."
-                            : "Tap the circle and speak.");
-            if (orb != null) {
-                orb.setBackground(gradient(
-                        Color.rgb(68, 52, 194),
-                        Color.rgb(44, 184, 226), 180));
-            }
-        }
-    }
-
-    private void ensureMicrophoneThenStart(boolean wake) {
-        if (wake) {
-            if (Build.VERSION.SDK_INT >= 23
-                    && checkSelfPermission(
-                    Manifest.permission.RECORD_AUDIO)
-                    != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(
-                        new String[]{Manifest.permission.RECORD_AUDIO},
-                        REQ_MIC);
-                return;
-            }
-
-            startVoiceService(
-                    BuddyVoiceService.ACTION_ENABLE_WAKE, null);
+                    "Say “Hey Buddy” anytime");
+            wakeText.setText(
+                    "Wake word ON • microphone listening");
+            wakeText.setTextColor(
+                    Color.rgb(82, 220, 151));
             return;
         }
 
+        if (BuddyVoiceService.STATE_LISTENING_COMMAND.equals(
+                currentState)) {
+            stateText.setText("I'm listening…");
+            stateText.setTextColor(
+                    Color.rgb(92, 208, 255));
+            hintText.setText(
+                    "Speak your command");
+            wakeText.setText(
+                    "Tap the circle again to stop");
+            return;
+        }
+
+        if (BuddyVoiceService.STATE_PROCESSING.equals(
+                currentState)) {
+            stateText.setText("On it…");
+            stateText.setTextColor(
+                    Color.rgb(92, 208, 255));
+            hintText.setText(
+                    "Processing your request");
+            wakeText.setText(
+                    "Local command or Gemini AI");
+            return;
+        }
+
+        if (BuddyVoiceService.STATE_SPEAKING.equals(
+                currentState)) {
+            stateText.setText("Buddy is speaking");
+            stateText.setTextColor(
+                    Color.rgb(82, 220, 151));
+            hintText.setText(
+                    "Ready for the next request");
+            wakeText.setText(
+                    prefs.getBoolean(KEY_WAKE, false)
+                            ? "Hey Buddy is ON"
+                            : "Hey Buddy is OFF");
+            return;
+        }
+
+        if (BuddyVoiceService.STATE_ERROR.equals(
+                currentState)) {
+            stateText.setText("Something needs attention");
+            stateText.setTextColor(
+                    Color.rgb(255, 119, 133));
+            hintText.setText(
+                    "Open Settings to fix permissions");
+            wakeText.setText(
+                    "Tap the circle to retry");
+            return;
+        }
+
+        stateText.setText("Ready");
+        stateText.setTextColor(Color.WHITE);
+        hintText.setText("Tap the circle and speak");
+        wakeText.setText(
+                prefs.getBoolean(KEY_WAKE, false)
+                        ? "Hey Buddy is ON"
+                        : "Hey Buddy is OFF");
+        wakeText.setTextColor(
+                prefs.getBoolean(KEY_WAKE, false)
+                        ? green
+                        : muted);
+    }
+
+    private void startCommandListening() {
         if (Build.VERSION.SDK_INT >= 23
                 && checkSelfPermission(
-                Manifest.permission.RECORD_AUDIO)
+                        Manifest.permission.RECORD_AUDIO)
                 != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(
-                    new String[]{Manifest.permission.RECORD_AUDIO},
+                    new String[]{
+                            Manifest.permission.RECORD_AUDIO},
                     REQ_MIC);
             return;
         }
 
         startVoiceService(
-                BuddyVoiceService.ACTION_TAP_COMMAND, null);
+                BuddyVoiceService.ACTION_TAP_COMMAND,
+                null);
     }
 
     private void startVoiceService(
             String action, String command) {
         try {
             Intent i = new Intent(
-                    this, BuddyVoiceService.class);
+                    this,
+                    BuddyVoiceService.class);
             i.setAction(action);
             i.setPackage(getPackageName());
+
             if (command != null) {
                 i.putExtra(
-                        BuddyVoiceService.EXTRA_COMMAND, command);
+                        BuddyVoiceService.EXTRA_COMMAND,
+                        command);
             }
 
             if (Build.VERSION.SDK_INT >= 26) {
@@ -425,19 +430,28 @@ public class MainActivity extends Activity {
                 startService(i);
             }
         } catch (Throwable t) {
+            renderState(
+                    BuddyVoiceService.STATE_ERROR);
             Toast.makeText(
                     this,
                     "Buddy voice service start nahi hua.",
                     Toast.LENGTH_SHORT).show();
-            renderState(BuddyVoiceService.STATE_ERROR);
         }
     }
 
     private void stopVoiceService() {
         try {
-            stopService(new Intent(
-                    this, BuddyVoiceService.class));
-        } catch (Throwable ignored) {}
+            startVoiceService(
+                    BuddyVoiceService.ACTION_STOP,
+                    null);
+        } catch (Throwable ignored) {
+            try {
+                stopService(
+                        new Intent(
+                                this,
+                                BuddyVoiceService.class));
+            } catch (Throwable ignoredAgain) {}
+        }
     }
 
     private void requestPhonePermissions() {
@@ -446,29 +460,32 @@ public class MainActivity extends Activity {
 
         if (Build.VERSION.SDK_INT >= 23
                 && checkSelfPermission(
-                Manifest.permission.RECORD_AUDIO)
+                        Manifest.permission.RECORD_AUDIO)
                 != PackageManager.PERMISSION_GRANTED) {
-            missing.add(Manifest.permission.RECORD_AUDIO);
+            missing.add(
+                    Manifest.permission.RECORD_AUDIO);
         }
 
         if (Build.VERSION.SDK_INT >= 23
                 && checkSelfPermission(
-                Manifest.permission.READ_CONTACTS)
+                        Manifest.permission.READ_CONTACTS)
                 != PackageManager.PERMISSION_GRANTED) {
-            missing.add(Manifest.permission.READ_CONTACTS);
+            missing.add(
+                    Manifest.permission.READ_CONTACTS);
         }
 
         if (Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(
-                Manifest.permission.POST_NOTIFICATIONS)
+                        Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
-            missing.add(Manifest.permission.POST_NOTIFICATIONS);
+            missing.add(
+                    Manifest.permission.POST_NOTIFICATIONS);
         }
 
         if (missing.isEmpty()) {
             Toast.makeText(
                     this,
-                    "Required permissions already granted.",
+                    "All required permissions are already granted.",
                     Toast.LENGTH_SHORT).show();
             return;
         }
@@ -481,20 +498,28 @@ public class MainActivity extends Activity {
     private void requestAssistantRole() {
         try {
             if (Build.VERSION.SDK_INT >= 29) {
-                RoleManager roleManager =
+                RoleManager rm =
                         getSystemService(RoleManager.class);
-                if (roleManager != null
-                        && roleManager.isRoleAvailable(
-                        RoleManager.ROLE_ASSISTANT)
-                        && !roleManager.isRoleHeld(
-                        RoleManager.ROLE_ASSISTANT)) {
-                    startActivityForResult(
-                            roleManager.createRequestRoleIntent(
-                                    RoleManager.ROLE_ASSISTANT),
-                            REQ_ASSISTANT_ROLE);
+
+                if (rm != null
+                        && rm.isRoleAvailable(
+                                RoleManager.ROLE_ASSISTANT)) {
+                    if (rm.isRoleHeld(
+                            RoleManager.ROLE_ASSISTANT)) {
+                        Toast.makeText(
+                                this,
+                                "Buddy is already the default assistant.",
+                                Toast.LENGTH_SHORT).show();
+                    } else {
+                        startActivityForResult(
+                                rm.createRequestRoleIntent(
+                                        RoleManager.ROLE_ASSISTANT),
+                                REQ_ASSISTANT_ROLE);
+                    }
                     return;
                 }
             }
+
             openVoiceSettings();
         } catch (Throwable t) {
             openVoiceSettings();
@@ -503,39 +528,39 @@ public class MainActivity extends Activity {
 
     private void openVoiceSettings() {
         try {
-            startActivity(new Intent(
-                    Settings.ACTION_VOICE_INPUT_SETTINGS));
-        } catch (Throwable t) {
-            try {
-                startActivity(new Intent(
-                        Settings.ACTION_SETTINGS));
-            } catch (Throwable ignored) {}
+            startActivity(
+                    new Intent(
+                            Settings.ACTION_VOICE_INPUT_SETTINGS));
+        } catch (Throwable ignored) {
+            startActivity(
+                    new Intent(
+                            Settings.ACTION_SETTINGS));
         }
     }
 
     @Override protected void onResume() {
         super.onResume();
-        if (wakeSwitch != null) {
-            boolean wake = prefs.getBoolean(
-                    KEY_WAKE, false);
-            if (wakeSwitch.isChecked() != wake) {
-                wakeSwitch.setOnCheckedChangeListener(null);
-                wakeSwitch.setChecked(wake);
-                wakeSwitch.setOnCheckedChangeListener(
-                        (button, checked) -> {
-                            prefs.edit()
-                                    .putBoolean(KEY_WAKE, checked)
-                                    .apply();
-                            if (checked) {
-                                ensureMicrophoneThenStart(true);
-                            } else {
-                                stopVoiceService();
-                                renderState(
-                                        BuddyVoiceService.STATE_IDLE);
-                            }
-                        });
-            }
+
+        if (prefs == null) return;
+
+        boolean wake = prefs.getBoolean(
+                KEY_WAKE, false);
+
+        if (wake
+                && !BuddyVoiceService.STATE_WAITING_WAKE.equals(
+                        currentState)
+                && !BuddyVoiceService.STATE_LISTENING_COMMAND.equals(
+                        currentState)
+                && !BuddyVoiceService.STATE_PROCESSING.equals(
+                        currentState)
+                && !BuddyVoiceService.STATE_SPEAKING.equals(
+                        currentState)) {
+            startVoiceService(
+                    BuddyVoiceService.ACTION_ENABLE_WAKE,
+                    null);
         }
+
+        renderState(currentState);
     }
 
     @Override public void onRequestPermissionsResult(
@@ -550,47 +575,20 @@ public class MainActivity extends Activity {
                     && grantResults[0]
                     == PackageManager.PERMISSION_GRANTED;
 
-            if (!granted) {
-                prefs.edit()
-                        .putBoolean(KEY_WAKE, false)
-                        .apply();
-
-                if (wakeSwitch != null) {
-                    wakeSwitch.setOnCheckedChangeListener(null);
-                    wakeSwitch.setChecked(false);
-                    wakeSwitch.setOnCheckedChangeListener(
-                            (button, checked) -> {
-                                prefs.edit()
-                                        .putBoolean(KEY_WAKE, checked)
-                                        .apply();
-                                if (checked) {
-                                    ensureMicrophoneThenStart(true);
-                                } else {
-                                    stopVoiceService();
-                                    renderState(
-                                            BuddyVoiceService.STATE_IDLE);
-                                }
-                            });
-                }
-
+            if (granted) {
+                startCommandListening();
+            } else {
                 renderState(
                         BuddyVoiceService.STATE_ERROR);
                 Toast.makeText(
                         this,
                         "Microphone permission allow karo.",
                         Toast.LENGTH_SHORT).show();
-                return;
             }
+            return;
+        }
 
-            if (wakeSwitch != null
-                    && wakeSwitch.isChecked()) {
-                startVoiceService(
-                        BuddyVoiceService.ACTION_ENABLE_WAKE, null);
-            } else {
-                startVoiceService(
-                        BuddyVoiceService.ACTION_TAP_COMMAND, null);
-            }
-        } else if (requestCode == REQ_PHONE_PERMISSIONS) {
+        if (requestCode == REQ_PHONE_PERMISSIONS) {
             Toast.makeText(
                     this,
                     "Permission setup updated.",
@@ -599,10 +597,15 @@ public class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
-        stopOrbAnimation();
+        if (pulse != null) {
+            pulse.cancel();
+            pulse = null;
+        }
+
         try {
             unregisterReceiver(statusReceiver);
         } catch (Throwable ignored) {}
+
         super.onDestroy();
     }
 }
