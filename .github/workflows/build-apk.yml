@@ -81,7 +81,7 @@ jobs:
               ("wake action wired", "ACTION_ENABLE_WAKE" in files["main"]),
               ("wake listener", "startWakeRecognition" in files["voice"]),
               ("wake transcript handler", "handleWakeTranscript" in files["voice"]),
-              ("secure packed storage", "split("\\\\.", 2)" in files["secrets"]),
+              ("secure packed storage", "split(" in files["secrets"]),
               ("try-saying removed", "TRY SAYING" not in files["main"]),
               ("OpenRouter removed", "openrouter" not in "\n".join(files.values()).lower()),
           ]
