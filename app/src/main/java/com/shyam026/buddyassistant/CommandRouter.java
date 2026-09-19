@@ -9,13 +9,16 @@ public final class CommandRouter {
 
     public static String normalize(String s) {
         if (s == null) return "";
-        return s.toLowerCase(Locale.ROOT)
+        String n = s.toLowerCase(Locale.ROOT)
+                .replaceAll("[^\\p{L}0-9+% ]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+
+        return n
                 .replace("you tube", "youtube")
                 .replace("wi fi", "wifi")
                 .replace("what's app", "whatsapp")
                 .replace("what s app", "whatsapp")
-                .replaceAll("[^\p{L}0-9+% ]", " ")
-                .replaceAll("\s+", " ")
                 .trim();
     }
 
@@ -42,10 +45,10 @@ public final class CommandRouter {
         String n = normalize(s);
 
         Matcher m = Pattern.compile(
-                "^(.+?)\s+(?:ko )?(?:call|phone)\s+(?:karo|kar do|do)$").matcher(n);
+                "^(.+?)\\s+(?:ko )?(?:call|phone)\\s+(?:karo|kar do|do)$").matcher(n);
         if (m.find()) return new CallRequest(m.group(1).trim());
 
-        m = Pattern.compile("^(?:call|phone|dial)(?:\s+karo)?\s+(.+)$").matcher(n);
+        m = Pattern.compile("^(?:call|phone|dial)(?:\\s+karo)?\\s+(.+)$").matcher(n);
         if (m.find()) return new CallRequest(m.group(1).trim());
 
         return null;
@@ -53,7 +56,7 @@ public final class CommandRouter {
 
     public static Integer extractNumber(String s) {
         if (s == null) return null;
-        Matcher m = Pattern.compile("\b(\d{1,3})\b").matcher(s);
+        Matcher m = Pattern.compile("\\b(\\d{1,3})\\b").matcher(s);
         return m.find() ? Integer.valueOf(m.group(1)) : null;
     }
 
@@ -84,7 +87,7 @@ public final class CommandRouter {
         }
 
         Matcher m = Pattern.compile(
-                "^youtube\s+(.+?)\s+(?:chalao|bajao|play)$").matcher(n);
+                "^youtube\\s+(.+?)\\s+(?:chalao|bajao|play)$").matcher(n);
         if (m.find()) return m.group(1).trim();
 
         return null;
@@ -119,11 +122,11 @@ public final class CommandRouter {
         String n = normalize(s);
 
         Matcher m = Pattern.compile(
-                "^(?:sms|send sms|text|message)\s+(.+?)\s+(?:ko|to)\s+(.+)$").matcher(n);
+                "^(?:sms|send sms|text|message)\\s+(.+?)\\s+(?:ko|to)\\s+(.+)$").matcher(n);
         if (m.find()) return new SmsRequest(m.group(2).trim(), m.group(1).trim());
 
         m = Pattern.compile(
-                "^(.+?)\s+ko\s+(?:sms|message|text)\s+(.+)$").matcher(n);
+                "^(.+?)\\s+ko\\s+(?:sms|message|text)\\s+(.+)$").matcher(n);
         if (m.find()) return new SmsRequest(m.group(1).trim(), m.group(2).trim());
 
         return null;
@@ -157,12 +160,12 @@ public final class CommandRouter {
         if (body == null) return null;
 
         Matcher m = Pattern.compile(
-                "^(?:message|msg|text|send message)\s+(.+?)\s+(?:ko|to)\s+(.+)$")
+                "^(?:message|msg|text|send message)\\s+(.+?)\\s+(?:ko|to)\\s+(.+)$")
                 .matcher(body);
         if (m.find()) return new WhatsAppRequest(m.group(2).trim(), m.group(1).trim());
 
         m = Pattern.compile(
-                "^(?:message|msg|text|send message)\s+(.+?)\s+for\s+(.+)$")
+                "^(?:message|msg|text|send message)\\s+(.+?)\\s+for\\s+(.+)$")
                 .matcher(body);
         if (m.find()) return new WhatsAppRequest(m.group(2).trim(), m.group(1).trim());
 
