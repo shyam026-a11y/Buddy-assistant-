@@ -146,14 +146,6 @@ public class MainActivity extends Activity {
         top.setGravity(Gravity.CENTER_VERTICAL);
         top.setPadding(dp(16), dp(14), dp(16), dp(8));
 
-        ImageView logo = new ImageView(this);
-        logo.setImageResource(R.drawable.buddy_logo);
-        logo.setBackground(rounded(
-                Color.rgb(28, 25, 67), line, 17));
-        logo.setPadding(dp(6), dp(6), dp(6), dp(6));
-        top.addView(logo, new LinearLayout.LayoutParams(
-                dp(46), dp(46)));
-
         LinearLayout brand = new LinearLayout(this);
         brand.setOrientation(LinearLayout.VERTICAL);
         brand.setPadding(dp(10), 0, 0, 0);
@@ -211,6 +203,8 @@ public class MainActivity extends Activity {
                 new LinearLayout.LayoutParams(
                         dp(210), dp(210));
         orbP.setMargins(0, dp(28), 0, dp(22));
+        orb.setContentDescription("Tap to talk to Buddy");
+        orb.setOnClickListener(v -> ensureMicrophoneThenStart(false));
         body.addView(orb, orbP);
 
         stateText = text(
