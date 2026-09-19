@@ -58,6 +58,7 @@ public class BuddyVoiceService extends Service {
     private boolean speaking;
     private boolean stopping;
     private boolean recognizerStarting;
+    private boolean usingOnDeviceRecognizer;
     private int wakeRetryCount;
 
     @Override public void onCreate() {
@@ -227,16 +228,20 @@ public class BuddyVoiceService extends Service {
             if (recognizer != null) recognizer.destroy();
 
             recognizer = null;
+            usingOnDeviceRecognizer = false;
+
             if (Build.VERSION.SDK_INT >= 31
                     && SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
                 try {
                     recognizer =
                             SpeechRecognizer.createOnDeviceSpeechRecognizer(this);
+                    usingOnDeviceRecognizer = recognizer != null;
                 } catch (Throwable ignored) {}
             }
 
             if (recognizer == null) {
                 recognizer = SpeechRecognizer.createSpeechRecognizer(this);
+                usingOnDeviceRecognizer = false;
             }
 
             recognizer.setRecognitionListener(new RecognitionListener() {
@@ -303,7 +308,7 @@ public class BuddyVoiceService extends Service {
                             : results.getStringArrayList(
                                     SpeechRecognizer.RESULTS_RECOGNITION);
 
-                    String command = firstUsable(phrases);
+                    String command = bestUsable(phrases, mode == Mode.WAKE);
 
                     if (mode == Mode.WAKE && wakeEnabled()) {
                         if (command == null) {
@@ -332,12 +337,38 @@ public class BuddyVoiceService extends Service {
         }
     }
 
-    private String firstUsable(ArrayList<String> phrases) {
+    private String bestUsable(ArrayList<String> phrases, boolean wakeMode) {
         if (phrases == null) return null;
-        for (String p : phrases) {
-            if (p != null && !p.trim().isEmpty()) return p.trim();
+
+        String best = null;
+        int bestScore = Integer.MIN_VALUE;
+
+        for (String value : phrases) {
+            if (value == null || value.trim().isEmpty()) continue;
+
+            String candidate = value.trim();
+            String n = CommandRouter.normalize(candidate);
+            int score = 0;
+
+            if (wakeMode && CommandRouter.isWakePhrase(n)) score += 1000;
+            if (n.startsWith("play ") || n.contains(" play ")) score += 80;
+            if (n.startsWith("open ") || n.startsWith("launch ")
+                    || n.startsWith("start ") || n.contains(" kholo")
+                    || n.contains(" khol do")) score += 70;
+            if (n.startsWith("call ") || n.startsWith("phone ")
+                    || n.startsWith("dial ")) score += 60;
+            if (n.startsWith("search ") || n.startsWith("find ")) score += 50;
+            if (n.contains("youtube") || n.contains("whatsapp")
+                    || n.contains("spotify")) score += 40;
+            score += Math.min(25, n.length());
+
+            if (score > bestScore) {
+                bestScore = score;
+                best = candidate;
+            }
         }
-        return null;
+
+        return best;
     }
 
     private void scheduleWakeRecognition(long delay) {
@@ -412,11 +443,13 @@ public class BuddyVoiceService extends Service {
                         RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 .putExtra(
                         RecognizerIntent.EXTRA_LANGUAGE,
-                        getSharedPreferences(PREF, MODE_PRIVATE)
-                                .getString(KEY_LANG, "en-IN"))
+                        mode == Mode.WAKE
+                                ? "en-IN"
+                                : getSharedPreferences(PREF, MODE_PRIVATE)
+                                        .getString(KEY_LANG, "en-IN"))
                 .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 6)
                 .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
-                .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
+                .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, usingOnDeviceRecognizer);
 
         intent.putExtra(
                 RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
