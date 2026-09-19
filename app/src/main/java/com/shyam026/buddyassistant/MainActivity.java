@@ -388,8 +388,8 @@ public class MainActivity extends Activity {
                         : "Hey Buddy is OFF");
         wakeText.setTextColor(
                 prefs.getBoolean(KEY_WAKE, false)
-                        ? green
-                        : muted);
+                        ? Color.rgb(82, 220, 151)
+                        : Color.rgb(151, 162, 188));
     }
 
     private void startCommandListening() {
