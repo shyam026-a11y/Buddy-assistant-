@@ -67,7 +67,7 @@ public final class BuddySecrets {
         String fallback = getPrefs(context).getString(API_KEY_FALLBACK, "");
         return fallback == null || fallback.isEmpty()
                 ? "Stored with Android Keystore."
-                : "Stored in app-private secure fallback.";
+                : "Stored in app-private fallback storage.";
     }
 
     public static boolean saveModel(Context context, String model) {
