@@ -52,8 +52,11 @@ jobs:
           ! grep -q 'startRecognition(true)' app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
           ! grep -q 'scheduleWake' app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
           ! grep -q 'pending_wake_start' app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
-          grep -q 'BuddySecrets.getApiKey' app/src/main/java/com/shyam026/buddyassistant/CommandEngine.java
-          ! grep -q 'getString(AI_KEY' app/src/main/java/com/shyam026/buddyassistant/CommandEngine.java
+          grep -q 'BuddySecrets.getGeminiApiKey' app/src/main/java/com/shyam026/buddyassistant/CommandEngine.java
+          grep -q 'x-goog-api-key' app/src/main/java/com/shyam026/buddyassistant/CommandEngine.java
+          grep -q 'generativelanguage.googleapis.com' app/src/main/java/com/shyam026/buddyassistant/CommandEngine.java
+          grep -q 'gemini-2.5-pro' app/src/main/java/com/shyam026/buddyassistant/BuddySecrets.java
+          ! grep -Rqi 'openrouter' app/src/main/java
 
       - name: Lint
         run: gradle lintDebug --no-daemon --stacktrace
@@ -70,7 +73,7 @@ jobs:
           {
             echo "commit=$GITHUB_SHA"
             echo "apk_sha256=$SHA"
-            echo "versionName=3.0-BuddyCore"
+            echo "versionName=3.2-Gemini"
           } > build-metadata.txt
 
       - name: Upload APK

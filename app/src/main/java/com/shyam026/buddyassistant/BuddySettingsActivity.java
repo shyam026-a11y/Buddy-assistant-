@@ -108,12 +108,12 @@ public class BuddySettingsActivity extends Activity {
         scroll.addView(content);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
-        content.addView(label("AI", 12, true));
-        content.addView(info("API keys are encrypted with Android Keystore and are not written to Git."));
-        apiKey = field(BuddySecrets.getApiKey(this), "OpenRouter API key", true);
+        content.addView(label("Gemini AI", 12, true));
+        content.addView(info("Gemini API key is encrypted with Android Keystore and is not written to Git."));
+        apiKey = field(BuddySecrets.getGeminiApiKey(this), "Gemini API key", true);
         content.addView(apiKey, new LinearLayout.LayoutParams(-1, dp(52)));
 
-        model = field(BuddySecrets.getModel(this), "openrouter/free", false);
+        model = field(BuddySecrets.getModel(this), "gemini-2.5-pro", false);
         LinearLayout.LayoutParams modelParams = new LinearLayout.LayoutParams(-1, dp(52));
         modelParams.setMargins(0, dp(8), 0, 0);
         content.addView(model, modelParams);
@@ -122,7 +122,7 @@ public class BuddySettingsActivity extends Activity {
         aiButtons.setPadding(0, dp(8), 0, 0);
         Button save = button("Save");
         save.setOnClickListener(v -> {
-            BuddySecrets.saveApiKey(this, apiKey.getText().toString());
+            BuddySecrets.saveGeminiApiKey(this, apiKey.getText().toString());
             BuddySecrets.saveModel(this, model.getText().toString());
             status.setText("Saved securely.");
         });
@@ -130,7 +130,7 @@ public class BuddySettingsActivity extends Activity {
 
         Button clear = button("Clear");
         clear.setOnClickListener(v -> {
-            BuddySecrets.clearApiKey(this);
+            BuddySecrets.clearGeminiApiKey(this);
             apiKey.setText("");
             status.setText("API key removed.");
         });
@@ -143,11 +143,11 @@ public class BuddySettingsActivity extends Activity {
         test.setOnClickListener(v -> {
             BuddySecrets.saveApiKey(this, apiKey.getText().toString());
             BuddySecrets.saveModel(this, model.getText().toString());
-            status.setText("Testing AI…");
+            status.setText("Testing Gemini…");
             CommandEngine.execute(this, "hello", reply ->
                     status.setText(reply == null || reply.trim().isEmpty()
                             ? "No AI response."
-                            : "AI responded: " + reply));
+                            : "Gemini responded: " + reply));
         });
         LinearLayout.LayoutParams testParams = new LinearLayout.LayoutParams(-1, dp(46));
         testParams.setMargins(0, dp(8), 0, 0);

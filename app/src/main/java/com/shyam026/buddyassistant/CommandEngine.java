@@ -549,41 +549,48 @@ public final class CommandEngine {
     }
 
     private static void cloud(Context c, String raw, Callback cb) {
-        String key = BuddySecrets.getApiKey(c).trim();
+        String key = BuddySecrets.getGeminiApiKey(c).trim();
         String model = BuddySecrets.getModel(c).trim();
         if (key.isEmpty()) {
-            done(c, cb, "AI key add nahi hai.");
+            done(c, cb, "Gemini API key add nahi hai.");
             return;
         }
+
         new Thread(() -> {
             HttpURLConnection h = null;
             try {
                 JSONObject body = new JSONObject()
-                        .put("model", model.isEmpty() ? "openrouter/free" : model)
-                        .put("temperature", 0.2)
-                        .put("max_tokens", 80);
-                JSONArray messages = new JSONArray();
-                messages.put(new JSONObject().put("role", "system").put("content",
-                        "You are Buddy, a friendly Indian voice assistant. " +
-                        "Reply naturally in concise Hinglish or English. Maximum 18 words. " +
-                        "Never claim a device action happened unless a local tool reported success."));
-                messages.put(new JSONObject().put("role", "user").put("content", raw));
-                body.put("messages", messages);
+                        .put("contents", new JSONArray()
+                                .put(new JSONObject()
+                                        .put("parts", new JSONArray()
+                                                .put(new JSONObject().put("text",
+                                                        "You are Buddy, a friendly Indian voice assistant. " +
+                                                        "Reply naturally in concise Hinglish or English. " +
+                                                        "Maximum 18 words. Never claim a device action happened " +
+                                                        "unless a local tool reported success.\n\nUser: " + raw))))
+                        .put("generationConfig", new JSONObject()
+                                .put("temperature", 0.2)
+                                .put("maxOutputTokens", 80));
 
-                h = (HttpURLConnection) new URL("https://openrouter.ai/api/v1/chat/completions").openConnection();
+                String safeModel = model.isEmpty() ? "gemini-2.5-pro" : model;
+                String endpoint = "https://generativelanguage.googleapis.com/v1beta/models/"
+                        + Uri.encode(safeModel) + ":generateContent";
+
+                h = (HttpURLConnection) new URL(endpoint).openConnection();
                 h.setRequestMethod("POST");
-                h.setConnectTimeout(1200);
-                h.setReadTimeout(3000);
+                h.setConnectTimeout(1500);
+                h.setReadTimeout(5000);
                 h.setDoOutput(true);
-                h.setRequestProperty("Authorization", "Bearer " + key);
+                h.setRequestProperty("x-goog-api-key", key);
                 h.setRequestProperty("Content-Type", "application/json");
+
                 try (OutputStream out = h.getOutputStream()) {
                     out.write(body.toString().getBytes(StandardCharsets.UTF_8));
                 }
 
                 int code = h.getResponseCode();
                 if (code < 200 || code >= 300) {
-                    done(c, cb, "AI response nahi aa raha.");
+                    done(c, cb, "Gemini response nahi aa raha.");
                     return;
                 }
 
@@ -593,20 +600,33 @@ public final class CommandEngine {
                 String line;
                 while ((line = reader.readLine()) != null) sb.append(line);
 
-                String answer = new JSONObject(sb.toString())
-                        .getJSONArray("choices")
-                        .getJSONObject(0)
-                        .getJSONObject("message")
-                        .optString("content", "")
-                        .replace("\\n", " ")
-                        .trim();
+                JSONObject response = new JSONObject(sb.toString());
+                JSONArray candidates = response.optJSONArray("candidates");
+                String answer = "";
 
+                if (candidates != null && candidates.length() > 0) {
+                    JSONObject candidate = candidates.optJSONObject(0);
+                    JSONObject content = candidate == null ? null : candidate.optJSONObject("content");
+                    JSONArray parts = content == null ? null : content.optJSONArray("parts");
+                    if (parts != null) {
+                        for (int index = 0; index < parts.length(); index++) {
+                            JSONObject part = parts.optJSONObject(index);
+                            if (part == null) continue;
+                            String partText = part.optString("text", "").trim();
+                            if (!partText.isEmpty()) {
+                                answer = answer.isEmpty() ? partText : answer + " " + partText;
+                            }
+                        }
+                    }
+                }
+
+                answer = answer.replace("\\n", " ").replaceAll("\\s+", " ").trim();
                 done(c, cb, answer.isEmpty() ? "Mujhe samajh nahi aaya." : answer);
             } catch (Throwable t) {
-                done(c, cb, "AI slow hai. Local command try karo.");
+                done(c, cb, "Gemini connect nahi ho paaya.");
             } finally {
                 if (h != null) h.disconnect();
             }
-        }, "buddy-ai").start();
+        }, "buddy-gemini");
     }
 }

@@ -10,36 +10,35 @@ import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 
 public final class BuddySecrets {
     private static final String KEY_ALIAS = "BuddySecretsKey";
     private static final String PREF = "buddy_secure";
-    private static final String API_KEY = "openrouter_api_key";
-    private static final String MODEL = "openrouter_model";
+    private static final String API_KEY = "gemini_api_key";
+    private static final String MODEL = "gemini_model";
 
     private BuddySecrets() {}
 
-    public static void saveApiKey(Context context, String key) {
+    public static void saveGeminiApiKey(Context context, String key) {
         put(context, API_KEY, key == null ? "" : key.trim());
     }
 
-    public static String getApiKey(Context context) {
+    public static String getGeminiApiKey(Context context) {
         return get(context, API_KEY);
     }
 
-    public static void clearApiKey(Context context) {
+    public static void clearGeminiApiKey(Context context) {
         getPrefs(context).edit().remove(API_KEY).apply();
     }
 
     public static void saveModel(Context context, String model) {
-        String clean = model == null || model.trim().isEmpty() ? "openrouter/free" : model.trim();
+        String clean = model == null || model.trim().isEmpty() ? "gemini-2.5-pro" : model.trim();
         put(context, MODEL, clean);
     }
 
     public static String getModel(Context context) {
         String model = get(context, MODEL);
-        return model.isEmpty() ? "openrouter/free" : model;
+        return model.isEmpty() ? "gemini-2.5-pro" : model;
     }
 
     private static void put(Context context, String key, String value) {
