@@ -73,6 +73,15 @@ public class BuddyVoiceService extends Service {
 
         String action = intent == null ? null : intent.getAction();
 
+        if (intent == null
+                && getSharedPreferences(PREF, MODE_PRIVATE)
+                .getBoolean(KEY_WAKE, false)) {
+            mode = Mode.WAKE;
+            announce(STATE_WAITING_WAKE, null, null);
+            startWakeRecognition();
+            return START_STICKY;
+        }
+
         if (ACTION_STOP.equals(action)) {
             stopVoiceService();
             return START_NOT_STICKY;
