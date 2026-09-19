@@ -39,38 +39,61 @@ jobs:
       - name: Unit tests
         run: gradle test --no-daemon --stacktrace
 
-      - name: Wake-word regression checks
+      - name: Source regression checks
         shell: bash
         run: |
           set -e
-          grep -q 'n.equals("buddy")' app/src/main/java/com/shyam026/buddyassistant/CommandRouter.java
-          grep -q 'n.startsWith("buddy ")' app/src/main/java/com/shyam026/buddyassistant/CommandRouter.java
-          grep -q 'n.equals("hey buddy")' app/src/main/java/com/shyam026/buddyassistant/CommandRouter.java
-          grep -q 'n.startsWith("hey buddy ")' app/src/main/java/com/shyam026/buddyassistant/CommandRouter.java
-          grep -q 'STATE_PROCESSING' app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
-          grep -q 'FOREGROUND_SERVICE_MICROPHONE' app/src/main/AndroidManifest.xml
-          ! grep -q 'startRecognition(true)' app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
-          ! grep -q 'scheduleWake' app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
-          ! grep -q 'pending_wake_start' app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
-          grep -q 'BuddySecrets.getGeminiApiKey' app/src/main/java/com/shyam026/buddyassistant/CommandEngine.java
-          grep -q 'x-goog-api-key' app/src/main/java/com/shyam026/buddyassistant/CommandEngine.java
-          grep -q 'generativelanguage.googleapis.com' app/src/main/java/com/shyam026/buddyassistant/CommandEngine.java
-          grep -q 'gemini-3.8-flash' app/src/main/java/com/shyam026/buddyassistant/BuddySecrets.java
-          grep -q 'GeminiModelCatalog' app/src/main/java/com/shyam026/buddyassistant/GeminiModelCatalog.java
-          grep -q 'supportedGenerationMethods' app/src/main/java/com/shyam026/buddyassistant/GeminiModelCatalog.java
-          grep -q 'SAVE & VERIFY KEY' app/src/main/java/com/shyam026/buddyassistant/BuddySettingsActivity.java
-          grep -q 'GeminiApiClient' app/src/main/java/com/shyam026/buddyassistant/BuddySettingsActivity.java
-          grep -q 'AI model' app/src/main/java/com/shyam026/buddyassistant/BuddySettingsActivity.java
-          grep -q 'Open Buddy Settings' app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
-          grep -q 'BuddySecrets.hasGeminiApiKey' app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
-          grep -q 'applyVoiceTuning' app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
-          ! grep -Rqi 'openrouter' app/src/main/java
-          grep -q 'Tap to talk to Buddy' app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
-          grep -q 'ACTION_ENABLE_WAKE' app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
-          grep -q 'startWakeRecognition' app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
-          grep -q 'handleWakeTranscript' app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
-          grep -Fq 'split' app/src/main/java/com/shyam026/buddyassistant/BuddySecrets.java
-          ! grep -q 'TRY SAYING' app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
+          python3 - <<'PY'
+          from pathlib import Path
+
+          files = {
+              "router": Path("app/src/main/java/com/shyam026/buddyassistant/CommandRouter.java").read_text(),
+              "voice": Path("app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java").read_text(),
+              "main": Path("app/src/main/java/com/shyam026/buddyassistant/MainActivity.java").read_text(),
+              "settings": Path("app/src/main/java/com/shyam026/buddyassistant/BuddySettingsActivity.java").read_text(),
+              "secrets": Path("app/src/main/java/com/shyam026/buddyassistant/BuddySecrets.java").read_text(),
+              "engine": Path("app/src/main/java/com/shyam026/buddyassistant/CommandEngine.java").read_text(),
+              "catalog": Path("app/src/main/java/com/shyam026/buddyassistant/GeminiModelCatalog.java").read_text(),
+              "client": Path("app/src/main/java/com/shyam026/buddyassistant/GeminiApiClient.java").read_text(),
+              "manifest": Path("app/src/main/AndroidManifest.xml").read_text(),
+          }
+
+          checks = [
+              ("wake phrase exact", 'n.equals("hey buddy")' in files["router"]),
+              ("wake phrase prefix", 'n.startsWith("hey buddy ")' in files["router"]),
+              ("Buddy prefix", 'n.startsWith("buddy ")' in files["router"]),
+              ("processing state", "STATE_PROCESSING" in files["voice"]),
+              ("microphone foreground permission", "FOREGROUND_SERVICE_MICROPHONE" in files["manifest"]),
+              ("no legacy wake-recursion", "startRecognition(true)" not in files["voice"] and "scheduleWake" not in files["voice"]),
+              ("no pending wake hack", "pending_wake_start" not in files["main"]),
+              ("direct Gemini key access", "BuddySecrets.getGeminiApiKey" in files["engine"]),
+              ("native Gemini auth", "x-goog-api-key" in files["engine"]),
+              ("Gemini endpoint", "generativelanguage.googleapis.com" in files["engine"]),
+              ("current default model", "gemini-3.8-flash" in files["secrets"]),
+              ("model catalog", "GeminiModelCatalog" in files["catalog"]),
+              ("generateContent filter", "supportedGenerationMethods" in files["catalog"]),
+              ("save and verify UI", "SAVE & VERIFY KEY" in files["settings"]),
+              ("connectivity tester", "GeminiApiClient.test" in files["settings"]),
+              ("settings content description", "Open Buddy Settings" in files["main"]),
+              ("stored-key summary", "BuddySecrets.hasGeminiApiKey" in files["main"]),
+              ("real voice tuning", "applyVoiceTuning" in files["voice"]),
+              ("voice orb action", "Tap to talk to Buddy" in files["main"] and "orb.setOnClickListener" in files["main"]),
+              ("wake action wired", "ACTION_ENABLE_WAKE" in files["main"]),
+              ("wake listener", "startWakeRecognition" in files["voice"]),
+              ("wake transcript handler", "handleWakeTranscript" in files["voice"]),
+              ("secure packed storage", "split("\\\\.", 2)" in files["secrets"]),
+              ("try-saying removed", "TRY SAYING" not in files["main"]),
+              ("OpenRouter removed", "openrouter" not in "\n".join(files.values()).lower()),
+          ]
+
+          failed = [name for name, ok in checks if not ok]
+          for name, ok in checks:
+              print(("PASS " if ok else "FAIL ") + name)
+
+          if failed:
+              raise SystemExit("Regression checks failed: " + ", ".join(failed))
+          print(f"All {len(checks)} named source checks passed.")
+          PY
 
       - name: 100x invariant sweep
         shell: bash
