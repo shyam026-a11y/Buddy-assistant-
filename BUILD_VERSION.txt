@@ -1,4 +1,4 @@
-Buddy V3.2 Gemini release build
-Version: 3.2-Gemini
+Buddy V3.1 Gemini Models release build
+Version: 3.1-GeminiModels
 AI provider: direct Google Gemini API
-Default model: gemini-2.5-pro
+Model selection: dynamic compatible Gemini catalog
