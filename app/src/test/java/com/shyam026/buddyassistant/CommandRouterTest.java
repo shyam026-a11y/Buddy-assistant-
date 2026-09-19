@@ -34,6 +34,21 @@ public class CommandRouterTest {
                         "search JEE physics"));
     }
 
+    @Test public void mediaAndAppParsing() {
+        assertEquals("arijit singh",
+                CommandRouter.mediaQuery("play song arijit singh"));
+        assertEquals("arijit singh",
+                CommandRouter.mediaQuery("arijit singh play"));
+        assertEquals("",
+                CommandRouter.mediaQuery("play a song"));
+        assertEquals("spotify",
+                CommandRouter.appLaunchRequest("open spotify"));
+        assertEquals("youtube",
+                CommandRouter.appLaunchRequest("youtube kholo"));
+        assertEquals("whatsapp",
+                CommandRouter.appLaunchRequest("launch whatsapp"));
+    }
+
     @Test public void memoryParsing() {
         assertEquals(
                 "my study time is 7 pm",
