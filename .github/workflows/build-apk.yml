@@ -60,7 +60,7 @@ jobs:
           grep -q 'supportedGenerationMethods' app/src/main/java/com/shyam026/buddyassistant/GeminiModelCatalog.java
           grep -q 'SAVE & VERIFY KEY' app/src/main/java/com/shyam026/buddyassistant/BuddySettingsActivity.java
           grep -q 'GeminiApiClient' app/src/main/java/com/shyam026/buddyassistant/BuddySettingsActivity.java
-          grep -q 'Active Gemini model' app/src/main/java/com/shyam026/buddyassistant/BuddySettingsActivity.java
+          grep -q 'AI model' app/src/main/java/com/shyam026/buddyassistant/BuddySettingsActivity.java
           grep -q 'Open Buddy Settings' app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
           grep -q 'BuddySecrets.hasGeminiApiKey' app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
           grep -q 'applyVoiceTuning' app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
