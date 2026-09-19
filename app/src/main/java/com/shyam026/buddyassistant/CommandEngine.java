@@ -578,8 +578,8 @@ public final class CommandEngine {
 
                 h = (HttpURLConnection) new URL(endpoint).openConnection();
                 h.setRequestMethod("POST");
-                h.setConnectTimeout(1500);
-                h.setReadTimeout(5000);
+                h.setConnectTimeout(5000);
+                h.setReadTimeout(10000);
                 h.setDoOutput(true);
                 h.setRequestProperty("x-goog-api-key", key);
                 h.setRequestProperty("Content-Type", "application/json");
@@ -590,7 +590,18 @@ public final class CommandEngine {
 
                 int code = h.getResponseCode();
                 if (code < 200 || code >= 300) {
-                    done(c, cb, "Gemini response nahi aa raha.");
+                    if (code == 400) {
+                        done(c, cb, "Gemini request invalid (HTTP 400).");
+                    } else if (code == 401 || code == 403) {
+                        done(c, cb,
+                                "Gemini API key rejected (HTTP " + code + ").");
+                    } else if (code == 404) {
+                        done(c, cb, "Selected Gemini model unavailable.");
+                    } else if (code == 429) {
+                        done(c, cb, "Gemini rate limit reached. Try again.");
+                    } else {
+                        done(c, cb, "Gemini server error (HTTP " + code + ").");
+                    }
                     return;
                 }
 
