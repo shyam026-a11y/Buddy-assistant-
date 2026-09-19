@@ -486,7 +486,13 @@ public class BuddyVoiceService extends Service {
                 .getBoolean(KEY_WAKE, false)
                 ? "Wake word ready — say “Hey Buddy”"
                 : "Tap to talk from Buddy";
-        return new Notification.Builder(this, "buddy_voice")
+        Notification.Builder builder;
+        if (Build.VERSION.SDK_INT >= 26) {
+            builder = new Notification.Builder(this, "buddy_voice");
+        } else {
+            builder = new Notification.Builder(this);
+        }
+        return builder
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentTitle("Buddy")
                 .setContentText(content)
