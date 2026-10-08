@@ -302,35 +302,25 @@ jobs:
           p = Path("app/build.gradle.kts")
           lines = p.read_text().splitlines()
           out = []
-          base = False
-          model = False
+          found_base = False
+          found_model = False
           for line in lines:
               stripped = line.strip()
-              if 'buildConfigField("String", "MODEL_BASE_URL"' in stripped:
-                  line = '        buildConfigField("String", "MODEL_BASE_URL", "\\"https://api.z.ai/api/paas/v4/chat/completions\\"")'
-                  base = True
-              elif 'buildConfigField("String", "MODEL_NAME"' in stripped:
-                  line = '        buildConfigField("String", "MODEL_NAME", "\\"glm-5.2\\"")'
-                  model = True
+              if "buildConfigField" in stripped and "MODEL_BASE_URL" in stripped:
+                  line = r'        buildConfigField("String", "MODEL_BASE_URL", "\"https://api.z.ai/api/paas/v4/chat/completions\"")'
+                  found_base = True
+              elif "buildConfigField" in stripped and "MODEL_NAME" in stripped:
+                  line = r'        buildConfigField("String", "MODEL_NAME", "\"glm-5.2\"")'
+                  found_model = True
               out.append(line)
-          if not (base and model):
-              raise SystemExit(f"GLM config declarations not found: base={base}, model={model}")
+          if not found_base or not found_model:
+              raise SystemExit(f"GLM declarations not found: base={found_base}, model={found_model}")
           p.write_text("\n".join(out) + "\n")
           PY
           grep -q 'MODEL_BASE_URL' app/build.gradle.kts
+          grep -q 'https://api.z.ai/api/paas/v4/chat/completions' app/build.gradle.kts
           grep -q 'MODEL_NAME' app/build.gradle.kts
           grep -q 'glm-5.2' app/build.gradle.kts
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          p = Path("app/src/main/res/xml/network_security_config.xml")
-          s = p.read_text()
-          s = re.sub(r'<domain>([^<]+)</domain>', r'<domain includeSubdomains="false">\1</domain>', s)
-          p.write_text(s)
-          PY
-          test "$(grep -c 'includeSubdomains="false"' app/src/main/res/xml/network_security_config.xml)" -eq 4
-          test "$(grep -c '<domain' app/src/main/res/xml/network_security_config.xml)" -eq 4
-
       - name: Fix Android API 26 compatibility
         working-directory: build-src/jarvis-android
         shell: bash
