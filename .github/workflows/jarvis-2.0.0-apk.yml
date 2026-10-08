@@ -23,34 +23,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -d .jarvis-source/xzparts
-          shopt -s nullglob
-          parts=(.jarvis-source/xzparts/c*.b64)
-          test "${#parts[@]}" -eq 55
-          cat "${parts[@]}" > jarvis-app.tar.xz.b64
+          git fetch --no-tags --depth=1 origin jarvis-2.0.0-release
+          mkdir -p .jarvis-clean
+          git show origin/jarvis-2.0.0-release:.jarvis-clean/p01.b64 > .jarvis-clean/p01.b64
+          git show origin/jarvis-2.0.0-release:.jarvis-clean/p02.b64 > .jarvis-clean/p02.b64
+          git show origin/jarvis-2.0.0-release:.jarvis-clean/p03.b64 > .jarvis-clean/p03.b64
+          git show origin/jarvis-2.0.0-release:.jarvis-clean/p04.b64 > .jarvis-clean/p04.b64
+          git show origin/jarvis-2.0.0-release:.jarvis-clean/p05.b64 > .jarvis-clean/p05.b64
+          cat .jarvis-clean/p01.b64 .jarvis-clean/p02.b64 .jarvis-clean/p03.b64 .jarvis-clean/p04.b64 .jarvis-clean/p05.b64 | tr -d '[:space:]' > jarvis-source.b64
           python3 - <<'PY'
           from pathlib import Path
-          import base64, hashlib, lzma, tarfile
-          encoded = "".join(Path("jarvis-app.tar.xz.b64").read_text(encoding="ascii").split()).rstrip("=")
-          encoded += "=" * ((4 - len(encoded) % 4) % 4)
-          raw = base64.b64decode(encoded, validate=True)
-          print("xz_bytes=", len(raw))
-          print("xz_sha256=", hashlib.sha256(raw).hexdigest())
-          if raw[:6] != b"\xfd7zXZ\x00":
-              raise SystemExit("Jarvis source is not XZ")
-          tar_bytes = lzma.decompress(raw)
-          Path("jarvis-source.tar").write_bytes(tar_bytes)
+          import base64, gzip, tarfile
+          s = Path("jarvis-source.b64").read_text().strip().rstrip("=")
+          s += "=" * ((4 - len(s) % 4) % 4)
+          raw = base64.b64decode(s, validate=True)
+          tar = gzip.decompress(raw)
+          Path("jarvis-source.tar").write_bytes(tar)
           with tarfile.open("jarvis-source.tar", "r:") as tf:
-              names=set(tf.getnames())
-          required={"settings.gradle.kts","app/build.gradle.kts","app/src/main/java/com/example/jarvis/JarvisApp.kt"}
-          missing=sorted(required-names)
-          if missing:
-              raise SystemExit("Jarvis source missing: "+", ".join(missing))
-          print("Jarvis XZ source integrity: PASS")
+              names = set(tf.getnames())
+          req = {"jarvis-android/app/build.gradle.kts", "jarvis-android/app/src/main/java/com/example/jarvis/JarvisApp.kt"}
+          assert req <= names, sorted(req - names)
+          print("Jarvis clean source: PASS")
           PY
           rm -rf build-src
           mkdir -p build-src
           tar -xf jarvis-source.tar -C build-src
+          test -f build-src/jarvis-android/app/build.gradle.kts
+          test -f build-src/jarvis-android/app/src/main/java/com/example/jarvis/JarvisApp.kt
       - name: Enable GLM-5.2 defaults
         working-directory: build-src/jarvis-android
         shell: bash
