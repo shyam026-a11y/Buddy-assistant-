@@ -1,0 +1,93 @@
+name: Jarvis PR APK
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout PR source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Reconstruct Jarvis source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d .jarvis-source/pkg
+          shopt -s nullglob
+          chunks=(.jarvis-source/pkg/q*.b64)
+          test "${#chunks[@]}" -eq 16
+          cat "${chunks[@]}" > jarvis-source.b64
+          base64 -d -i jarvis-source.b64 -o jarvis-source.tar.gz
+          tar -tzf jarvis-source.tar.gz >/dev/null
+          rm -rf build-src
+          mkdir -p build-src
+          tar -xzf jarvis-source.tar.gz -C build-src
+          test -f build-src/jarvis-android/app/build.gradle.kts
+          test -f build-src/jarvis-android/app/src/main/java/com/example/jarvis/JarvisApp.kt
+
+      - name: Enable GLM-5.2 defaults
+        working-directory: build-src/jarvis-android
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("app/build.gradle.kts")
+          s = p.read_text()
+          s = s.replace(
+              'buildConfigField("String", "MODEL_BASE_URL", "\"\")',
+              'buildConfigField("String", "MODEL_BASE_URL", "\"https://api.z.ai/api/paas/v4/chat/completions\"")'
+          )
+          s = s.replace(
+              'buildConfigField("String", "MODEL_NAME", "\"\")',
+              'buildConfigField("String", "MODEL_NAME", "\"glm-5.2\"")'
+          )
+          p.write_text(s)
+          PY
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build debug APK
+        working-directory: build-src/jarvis-android
+        shell: bash
+        run: |
+          set -euxo pipefail
+          gradle :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Collect APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          find build-src/jarvis-android/app/build/outputs -type f -name '*debug*.apk' -print -exec cp {} artifacts/jarvis-debug.apk \;
+          test -f artifacts/jarvis-debug.apk
+          sha256sum artifacts/jarvis-debug.apk > artifacts/SHA256SUMS.txt
+          ls -lh artifacts/
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-glm-5.2-debug-apk
+          path: artifacts/
