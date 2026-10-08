@@ -1,4 +1,4 @@
-name: Buddy Assistant APK
+name: Jarvis Android APK
 
 on:
   workflow_dispatch:
@@ -12,8 +12,88 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Fetch Jarvis release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin jarvis-2.0.0-apk-build:refs/remotes/origin/jarvis-2.0.0-apk-build
+
+      - name: Reconstruct Jarvis source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf jarvis-payload build-src
+          mkdir -p jarvis-payload build-src
+          git archive origin/jarvis-2.0.0-apk-build .jarvis-source | tar -x -C jarvis-payload
+          shopt -s nullglob
+          chunks=(jarvis-payload/.jarvis-source/pkg/q*.b64)
+          test "${#chunks[@]}" -eq 16
+          cat "${chunks[@]}" > jarvis-source.b64
+          base64 -d -i jarvis-source.b64 -o jarvis-source.tar.gz
+          tar -tzf jarvis-source.tar.gz >/dev/null
+          tar -xzf jarvis-source.tar.gz -C build-src
+          test -f build-src/jarvis-android/app/build.gradle.kts
+          echo "Jarvis source reconstruction: PASS"
+
+      - name: Enable GLM-5.2 defaults
+        working-directory: build-src/jarvis-android
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("app/build.gradle.kts")
+          s = p.read_text()
+          s = s.replace(
+              'buildConfigField("String", "MODEL_BASE_URL", "\"\")',
+              'buildConfigField("String", "MODEL_BASE_URL", "\"https://api.z.ai/api/paas/v4/chat/completions\"")'
+          )
+          s = s.replace(
+              'buildConfigField("String", "MODEL_NAME", "\"\")',
+              'buildConfigField("String", "MODEL_NAME", "\"glm-5.2\"")'
+          )
+          p.write_text(s)
+
+          p = Path("app/src/main/java/com/example/jarvis/MainActivity.kt")
+          s = p.read_text()
+          marker = '''                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("API key (optional)") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                )
+'''
+          addition = marker + '''                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = {
+                        endpoint = "https://api.z.ai/api/paas/v4/chat/completions"
+                        model = "glm-5.2"
+                    }) {
+                        Text("Use GLM-5.2")
+                    }
+                }
+                Text(
+                    "GLM-5.2 runs on a hosted service or separate inference server. The phone keeps the control and security layers local.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+'''
+          if 'Text("Use GLM-5.2")' not in s:
+              if marker not in s:
+                  raise SystemExit("GLM settings insertion point not found")
+              s = s.replace(marker, addition, 1)
+          p.write_text(s)
+          PY
+          grep -q 'glm-5.2' app/build.gradle.kts
+          grep -q 'Use GLM-5.2' app/src/main/java/com/example/jarvis/MainActivity.kt
 
       - name: Java 17
         uses: actions/setup-java@v5
@@ -24,112 +104,55 @@ jobs:
       - name: Android SDK
         shell: bash
         run: |
+          set -euo pipefail
           SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           if [ ! -x "$SDKMANAGER" ]; then
             SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager -type f -print -quit)"
           fi
+          test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Gradle
         uses: gradle/actions/setup-gradle@v5
         with:
-          gradle-version: "8.11.1"
+          gradle-version: "8.13"
 
-      - name: Unit tests
-        run: gradle test --no-daemon --stacktrace
-
-      - name: Source regression checks
+      - name: Unit tests and lint
+        working-directory: build-src/jarvis-android
         shell: bash
         run: |
-          set -e
-          python3 - <<'PY'
-          from pathlib import Path
-
-          files = {
-              "router": Path("app/src/main/java/com/shyam026/buddyassistant/CommandRouter.java").read_text(),
-              "voice": Path("app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java").read_text(),
-              "main": Path("app/src/main/java/com/shyam026/buddyassistant/MainActivity.java").read_text(),
-              "settings": Path("app/src/main/java/com/shyam026/buddyassistant/BuddySettingsActivity.java").read_text(),
-              "secrets": Path("app/src/main/java/com/shyam026/buddyassistant/BuddySecrets.java").read_text(),
-              "engine": Path("app/src/main/java/com/shyam026/buddyassistant/CommandEngine.java").read_text(),
-              "catalog": Path("app/src/main/java/com/shyam026/buddyassistant/GeminiModelCatalog.java").read_text(),
-              "client": Path("app/src/main/java/com/shyam026/buddyassistant/GeminiApiClient.java").read_text(),
-              "manifest": Path("app/src/main/AndroidManifest.xml").read_text(),
-          }
-
-          checks = [
-              ("wake phrase exact", 'n.equals("hey buddy")' in files["router"]),
-              ("wake phrase prefix", 'n.startsWith("hey buddy ")' in files["router"]),
-              ("Buddy prefix", 'n.startsWith("buddy ")' in files["router"]),
-              ("processing state", "STATE_PROCESSING" in files["voice"]),
-              ("microphone foreground permission", "FOREGROUND_SERVICE_MICROPHONE" in files["manifest"]),
-              ("no legacy wake-recursion", "startRecognition(true)" not in files["voice"] and "pending_wake_start" not in files["main"]),
-              ("no pending wake hack", "pending_wake_start" not in files["main"]),
-              ("direct Gemini key access", "BuddySecrets.getGeminiApiKey" in files["engine"]),
-              ("native Gemini auth", "x-goog-api-key" in files["engine"]),
-              ("Gemini endpoint", "generativelanguage.googleapis.com" in files["engine"]),
-              ("current default model", "gemini-3.8-flash" in files["secrets"]),
-              ("model catalog", "GeminiModelCatalog" in files["catalog"]),
-              ("generateContent filter", "supportedGenerationMethods" in files["catalog"]),
-              ("save and verify UI", "SAVE & VERIFY KEY" in files["settings"]),
-              ("connectivity tester", "GeminiApiClient.test" in files["settings"]),
-              ("settings content description", "Open Buddy Settings" in files["main"]),
-              ("real voice tuning", "applyVoiceTuning" in files["voice"]),
-              ("voice orb action", "Tap to talk to Buddy" in files["main"] and "orb.setOnClickListener" in files["main"]),
-              ("wake action wired", "ACTION_ENABLE_WAKE" in files["main"]),
-              ("wake listener", "startWakeRecognition" in files["voice"]),
-              ("wake transcript handler", "handleWakeTranscript" in files["voice"]),
-              ("secure packed storage", "split(" in files["secrets"]),
-              ("try-saying removed", "TRY SAYING" not in files["main"]),
-              ("OpenRouter removed", "openrouter" not in "\n".join(files.values()).lower()),
-          ]
-
-          failed = [name for name, ok in checks if not ok]
-          for name, ok in checks:
-              print(("PASS " if ok else "FAIL ") + name)
-
-          if failed:
-              raise SystemExit("Regression checks failed: " + ", ".join(failed))
-          print(f"All {len(checks)} named source checks passed.")
-          PY
-
-      - name: 100x invariant sweep
-        shell: bash
-        run: |
-          set -e
-          for i in $(seq 1 100); do
-            grep -q 'SAVE & VERIFY KEY' app/src/main/java/com/shyam026/buddyassistant/BuddySettingsActivity.java
-            grep -q 'GeminiApiClient.test' app/src/main/java/com/shyam026/buddyassistant/BuddySettingsActivity.java
-            grep -q 'x-goog-api-key' app/src/main/java/com/shyam026/buddyassistant/GeminiApiClient.java
-            grep -q 'orb.setOnClickListener' app/src/main/java/com/shyam026/buddyassistant/MainActivity.java
-            grep -q 'startWakeRecognition' app/src/main/java/com/shyam026/buddyassistant/BuddyVoiceService.java
-          done
-
-      - name: Lint
-        run: gradle lintDebug --no-daemon --stacktrace
+          set -euo pipefail
+          chmod +x scripts/*.sh 2>/dev/null || true
+          gradle :app:testDebugUnitTest :app:lintRelease --no-daemon --stacktrace
 
       - name: Build APK
-        run: gradle assembleDebug --no-daemon --stacktrace
-
-      - name: Build metadata
+        working-directory: build-src/jarvis-android
         shell: bash
         run: |
-          set -e
-          APK="app/build/outputs/apk/debug/app-debug.apk"
-          SHA="$(sha256sum "$APK" | awk '{print $1}')"
+          set -euo pipefail
+          gradle :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Collect APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          find build-src/jarvis-android/app/build/outputs -type f -name '*.apk' -print -exec cp {} artifacts/ \;
+          test -n "$(find artifacts -type f -name '*.apk' -print -quit)"
+          sha256sum artifacts/*.apk > artifacts/SHA256SUMS.txt
           {
-            echo "commit=$GITHUB_SHA"
-            echo "apk_sha256=$SHA"
-            echo "versionName=5.0-VerifiedVoiceUI"
-          } > build-metadata.txt
+            echo "source_branch=jarvis-2.0.0-apk-build"
+            echo "source_commit=$(git rev-parse origin/jarvis-2.0.0-apk-build)"
+            echo "build_commit=$GITHUB_SHA"
+            echo "model=glm-5.2"
+          } > artifacts/BUILD_INFO.txt
+          ls -lh artifacts/
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Buddy-V5-Verified
-          path: |
-            app/build/outputs/apk/debug/app-debug.apk
-            build-metadata.txt
+          name: jarvis-glm-5.2-apks
+          path: artifacts/
           if-no-files-found: error
           retention-days: 90
