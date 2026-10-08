@@ -89,7 +89,7 @@ jobs:
       - name: Set GLM-5.2 defaults
         run: |
           set -euo pipefail
-          cd /tmp/jarvis-src/jarvis-android
+          cd build-src/jarvis-android
           python3 - <<'PY'
           from pathlib import Path
           p=Path("app/build.gradle.kts")
@@ -103,22 +103,22 @@ jobs:
           grep -q "glm-5.2" app/build.gradle.kts
 
       - name: Test
-        working-directory: /tmp/jarvis-src/jarvis-android
+        working-directory: build-src/jarvis-android
         run: gradle :app:testDebugUnitTest --no-daemon --stacktrace
 
       - name: Lint
-        working-directory: /tmp/jarvis-src/jarvis-android
+        working-directory: build-src/jarvis-android
         run: gradle :app:lintRelease --no-daemon --stacktrace
 
       - name: Build debug APK
-        working-directory: /tmp/jarvis-src/jarvis-android
+        working-directory: build-src/jarvis-android
         run: gradle :app:assembleDebug --no-daemon --stacktrace
 
       - name: Collect APK
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          cp /tmp/jarvis-src/jarvis-android/app/build/outputs/apk/debug/*.apk artifacts/jarvis-debug.apk
+          cp build-src/jarvis-android/app/build/outputs/apk/debug/*.apk artifacts/jarvis-debug.apk
           sha256sum artifacts/jarvis-debug.apk > artifacts/SHA256SUMS.txt
           printf 'model=glm-5.2\nsource=jarvis-2.0.0-apk-build\n' > artifacts/BUILD_INFO.txt
 
