@@ -138,6 +138,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p app/libs
+          base=https://repo1.maven.org/maven2/dev/rikka/shizuku
+          for pair in api/13.1.5/api-13.1.5.aar shared/13.1.5/shared-13.1.5.aar aidl/13.1.5/aidl-13.1.5.aar provider/13.1.5/provider-13.1.5.aar; do
+            rel="${pair##*/}"
+            curl --fail --location --retry 3 --retry-all-errors --silent --show-error "$base/$pair" --output "app/libs/$rel"
+          done
+          test -s app/libs/api-13.1.5.aar
+          test -s app/libs/shared-13.1.5.aar
+          test -s app/libs/aidl-13.1.5.aar
+          test -s app/libs/provider-13.1.5.aar
+
           python3 - <<'PY'
           from pathlib import Path
 
@@ -148,26 +159,20 @@ jobs:
                   s = s.replace(anchor, import_line + chr(10) + anchor, 1)
                   p.write_text(s)
 
-          add_import(
-              "app/src/main/java/com/example/jarvis/JarvisApp.kt",
-              "import com.example.jarvis.voice.VoicePreferences",
-              "import com.example.jarvis.voice.AndroidPcmCapture",
-          )
+          p = Path("app/src/main/java/com/example/jarvis/JarvisApp.kt")
+          s = p.read_text()
+          add = "import com.example.jarvis.voice.VoicePreferences"
+          if add not in s:
+              s = s.replace("import com.example.jarvis.voice.AndroidPcmCapture", add + chr(10) + "import com.example.jarvis.voice.AndroidPcmCapture", 1)
+              p.write_text(s)
 
           p = Path("app/src/main/java/com/example/jarvis/voice/VoiceSettings.kt")
           s = p.read_text()
           if "fun setSystemFallbackAllowed(allowed: Boolean)" not in s:
               needle = "    fun getTuning(): VoiceTuning = tuning"
-              if needle not in s:
-                  raise SystemExit("Voice controller insertion point not found")
-              s = s.replace(
-                  needle,
-                  "    fun setSystemFallbackAllowed(allowed: Boolean) {" + chr(10) +
-                  "        output.setSystemFallbackAllowed(allowed)" + chr(10) +
-                  "    }" + chr(10) + chr(10) + needle,
-                  1,
-              )
-              p.write_text(s)
+              if needle in s:
+                  s = s.replace(needle, "    fun setSystemFallbackAllowed(allowed: Boolean) {" + chr(10) + "        output.setSystemFallbackAllowed(allowed)" + chr(10) + "    }" + chr(10) + chr(10) + needle, 1)
+                  p.write_text(s)
 
           p = Path("app/src/main/java/com/example/jarvis/MainActivity.kt")
           s = p.read_text()
@@ -185,45 +190,36 @@ jobs:
           p = Path("app/src/main/java/com/example/jarvis/agent/JarvisEngine.kt")
           s = p.read_text()
           if "import kotlinx.coroutines.launch" not in s:
-              s = s.replace(
-                  "import com.example.jarvis.security.MemorySafetyPolicy",
-                  "import com.example.jarvis.security.MemorySafetyPolicy" + chr(10) + "import kotlinx.coroutines.launch",
-                  1,
-              )
+              s = s.replace("import com.example.jarvis.security.MemorySafetyPolicy", "import com.example.jarvis.security.MemorySafetyPolicy" + chr(10) + "import kotlinx.coroutines.launch", 1)
               p.write_text(s)
 
           p = Path("app/src/main/java/com/example/jarvis/task/TaskManager.kt")
           s = p.read_text()
           if "import kotlinx.coroutines.sync.Mutex" not in s:
-              s = s.replace(
-                  "import kotlinx.coroutines.channels.Channel",
-                  "import kotlinx.coroutines.channels.Channel" + chr(10) + "import kotlinx.coroutines.sync.Mutex" + chr(10) + "import kotlinx.coroutines.sync.withLock",
-                  1,
-              )
+              s = s.replace("import kotlinx.coroutines.channels.Channel", "import kotlinx.coroutines.channels.Channel" + chr(10) + "import kotlinx.coroutines.sync.Mutex" + chr(10) + "import kotlinx.coroutines.sync.withLock", 1)
               p.write_text(s)
 
           p = Path("app/build.gradle.kts")
           lines = p.read_text().splitlines()
-          lines = [line for line in lines if "dev.rikka.shizuku:api:" not in line and "dev.rikka.shizuku:provider:" not in line]
+          lines = [line for line in lines if "dev.rikka.shizuku:" not in line]
           anchor = 'implementation("com.squareup.okhttp3:okhttp:5.3.0")'
-          try:
-              i = next(i for i, line in enumerate(lines) if anchor in line)
-          except StopIteration:
+          i = next((i for i, line in enumerate(lines) if anchor in line), None)
+          if i is None:
               raise SystemExit("OkHttp dependency anchor not found")
           lines[i + 1:i + 1] = [
-              '    implementation("dev.rikka.shizuku:api:13.1.5")',
-              '    implementation("dev.rikka.shizuku:provider:13.1.5")',
+              '    implementation(files("libs/api-13.1.5.aar"))',
+              '    implementation(files("libs/shared-13.1.5.aar"))',
+              '    implementation(files("libs/aidl-13.1.5.aar"))',
+              '    implementation(files("libs/provider-13.1.5.aar"))',
           ]
           p.write_text(chr(10).join(lines) + chr(10))
           PY
 
-          grep -q 'VoicePreferences' app/src/main/java/com/example/jarvis/JarvisApp.kt
+          grep -q 'api-13.1.5.aar' app/build.gradle.kts
+          grep -q 'provider-13.1.5.aar' app/build.gradle.kts
           grep -q 'fun setSystemFallbackAllowed' app/src/main/java/com/example/jarvis/voice/VoiceSettings.kt
           grep -q 'import kotlinx.coroutines.launch' app/src/main/java/com/example/jarvis/MainActivity.kt
-          grep -q 'import kotlinx.coroutines.launch' app/src/main/java/com/example/jarvis/agent/JarvisEngine.kt
           grep -q 'import kotlinx.coroutines.sync.Mutex' app/src/main/java/com/example/jarvis/task/TaskManager.kt
-          grep -q 'dev.rikka.shizuku:api:13.1.5' app/build.gradle.kts
-          grep -q 'dev.rikka.shizuku:provider:13.1.5' app/build.gradle.kts
 
       - name: Pin AndroidX compatibility set
         working-directory: build-src/jarvis-android
