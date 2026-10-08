@@ -1,0 +1,1 @@
+Final lint fix: loopback NetworkSecurityConfig domains now receive includeSubdomains=false before lint.
