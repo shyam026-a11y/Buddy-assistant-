@@ -29,7 +29,15 @@ jobs:
           chunks=(.jarvis-source/pkg/q*.b64)
           test "${#chunks[@]}" -eq 16
           cat "${chunks[@]}" > jarvis-source.b64
-          base64 -d -i jarvis-source.b64 -o jarvis-source.tar.gz
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, gzip
+          encoded = Path("jarvis-source.b64").read_text(encoding="ascii").encode("ascii")
+          raw = base64.b64decode(encoded + b"===", validate=False)
+          # gzip.decompress validates the stream and CRC before returning.
+          gzip.decompress(raw)
+          Path("jarvis-source.tar.gz").write_bytes(raw)
+          PY
           tar -tzf jarvis-source.tar.gz >/dev/null
           rm -rf build-src
           mkdir -p build-src
