@@ -184,12 +184,10 @@ jobs:
 
           p = Path("app/src/main/java/com/example/jarvis/MainActivity.kt")
           s = p.read_text()
-          if "@OptIn(ExperimentalMaterial3Api::class)" not in s:
-              s = s.replace(
-                  "@Composable\nprivate fun JarvisHome(",
-                  "@OptIn(ExperimentalMaterial3Api::class)\n@Composable\nprivate fun JarvisHome(",
-                  1,
-              )
+          file_optin = "@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)\\n"
+          if not s.startswith("@file:OptIn("):
+              s = file_optin + s
+          p.write_text(s)
           replace_once(
               "app/src/main/java/com/example/jarvis/MainActivity.kt",
               "onOpenAccessibility = { startActivitySafely(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },",
@@ -223,7 +221,8 @@ jobs:
               anchor = 'implementation("com.squareup.okhttp3:okhttp:5.3.0")'
               if anchor not in s:
                   raise SystemExit("OkHttp dependency anchor missing")
-              s = s.replace(anchor, anchor + '\n    implementation("dev.rikka.shizuku:api:12.2.0")', 1)
+              s = s.replace(anchor, anchor + '\n    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")', 1)
           p.write_text(s)
           PY
 
