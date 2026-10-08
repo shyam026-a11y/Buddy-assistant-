@@ -1,0 +1,1 @@
+Trigger Jarvis APK after removing stale temporary source path.
