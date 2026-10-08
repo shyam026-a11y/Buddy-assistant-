@@ -29,7 +29,7 @@ jobs:
           chunks=(.jarvis-source/pkg/q*.b64)
           test "${#chunks[@]}" -eq 16
           cat "${chunks[@]}" > jarvis-source.b64
-          base64 -d -i jarvis-source.b64 -o jarvis-source.tar.gz
+          base64 -d -i jarvis-source.b64 > jarvis-source.tar.gz
           tar -tzf jarvis-source.tar.gz >/dev/null
           rm -rf build-src
           mkdir -p build-src
