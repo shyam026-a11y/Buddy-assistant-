@@ -1,5 +1,7 @@
 name: Jarvis GLM-5.2 APK
 
+# Clean debug APK build for the current release branch.
+
 on:
   push:
     branches: [jarvis-2.0.0-release]
@@ -14,7 +16,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-
     steps:
       - name: Checkout release branch
         uses: actions/checkout@v4
@@ -44,7 +45,6 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           p = Path("app/build.gradle.kts")
           s = p.read_text()
           s = s.replace(
@@ -56,39 +56,8 @@ jobs:
               'buildConfigField("String", "MODEL_NAME", "\"glm-5.2\"")'
           )
           p.write_text(s)
-
-          p = Path("app/src/main/java/com/example/jarvis/MainActivity.kt")
-          s = p.read_text()
-          if 'Text("Use GLM-5.2")' not in s:
-              marker = '''                OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = { apiKey = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("API key (optional)") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                )
-'''
-              addition = marker + '''                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = {
-                        endpoint = "https://api.z.ai/api/paas/v4/chat/completions"
-                        model = "glm-5.2"
-                    }) {
-                        Text("Use GLM-5.2")
-                    }
-                }
-                Text(
-                    "GLM-5.2 runs on a hosted service or separate inference server. The phone keeps the control and security layers local.",
-                    style = MaterialTheme.typography.bodySmall
-                )
-'''
-              if marker not in s:
-                  raise SystemExit("GLM settings insertion point not found")
-              s = s.replace(marker, addition, 1)
-              p.write_text(s)
           PY
           grep -q 'glm-5.2' app/build.gradle.kts
-          grep -q 'Use GLM-5.2' app/src/main/java/com/example/jarvis/MainActivity.kt
           echo "GLM-5.2 wiring: PASS"
 
       - name: Toolchain diagnostics
@@ -98,8 +67,6 @@ jobs:
           set -euxo pipefail
           java -version
           gradle --version
-          find app/src/main/java -type f | sort | sed -n '1,160p'
-          find app/src/main/res -maxdepth 2 -type f | sort | sed -n '1,160p'
 
       - name: Unit tests and debug APK
         working-directory: build-src/jarvis-android
