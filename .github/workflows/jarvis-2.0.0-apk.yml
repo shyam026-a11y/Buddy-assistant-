@@ -23,39 +23,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -f .jarvis-source/jarvis-source-2.0.0.tar.gz.b64
-          python3 - <<'PY'
-          from pathlib import Path
-          import base64, gzip, hashlib, tarfile
-          encoded = "".join(Path(".jarvis-source/jarvis-source-2.0.0.tar.gz.b64").read_text(encoding="ascii").split())
-          encoded = encoded.rstrip("=")
-          if not encoded or len(encoded) % 4 == 1:
-              raise SystemExit(f"invalid Base64 data length: {len(encoded)}")
-          padding = "=" * ((4 - len(encoded) % 4) % 4)
-          encoded += padding
-          raw = base64.b64decode(encoded, validate=True)
-          if raw[:2] != b"\x1f\x8b":
-              raise SystemExit("source bundle is not gzip")
-          print("source_gzip_bytes=", len(raw))
-          print("source_gzip_sha256=", hashlib.sha256(raw).hexdigest())
-          tar_bytes = gzip.decompress(raw)
-          Path("jarvis-source.tar").write_bytes(tar_bytes)
-          with tarfile.open("jarvis-source.tar", "r:") as tf:
-              names = set(tf.getnames())
-          required = {
-              "jarvis-android/app/build.gradle.kts",
-              "jarvis-android/app/src/main/java/com/example/jarvis/JarvisApp.kt",
-          }
-          missing = sorted(required - names)
-          if missing:
-              raise SystemExit("missing required source files: " + ", ".join(missing))
-          print("Jarvis source bundle integrity: PASS")
-          PY
+          test -f .jarvis-source/jarvis-app.tar.xz
           rm -rf build-src
           mkdir -p build-src
-          tar -xf jarvis-source.tar -C build-src
+          tar -xJf .jarvis-source/jarvis-app.tar.xz -C build-src
+          test -f build-src/jarvis-android/settings.gradle.kts
           test -f build-src/jarvis-android/app/build.gradle.kts
           test -f build-src/jarvis-android/app/src/main/java/com/example/jarvis/JarvisApp.kt
+          echo "Jarvis source reconstruction: PASS"
       - name: Enable GLM-5.2 defaults
         working-directory: build-src/jarvis-android
         shell: bash
