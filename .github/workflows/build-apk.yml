@@ -50,7 +50,7 @@ jobs:
           test -d .jarvis-source/xzparts
           shopt -s nullglob
           parts=(.jarvis-source/xzparts/c*.b64)
-          test "${#parts[@]}" -eq 49
+          test "${#parts[@]}" -eq 53
           cat "${parts[@]}" > jarvis-app.tar.xz.b64
           python3 - <<'PY'
           from pathlib import Path
