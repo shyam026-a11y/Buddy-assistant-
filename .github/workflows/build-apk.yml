@@ -321,6 +321,55 @@ jobs:
           grep -q 'https://api.z.ai/api/paas/v4/chat/completions' app/build.gradle.kts
           grep -q 'MODEL_NAME' app/build.gradle.kts
           grep -q 'glm-5.2' app/build.gradle.kts
+      - name: Fix Network Security Config lint errors
+        working-directory: build-src/jarvis-android
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          p = Path("app/src/main/res/xml/network_security_config.xml")
+          s = p.read_text(encoding="utf-8")
+
+          expected = [
+              "<domain>localhost</domain>",
+              "<domain>127.0.0.1</domain>",
+              "<domain>ip6-localhost</domain>",
+              "<domain>[::1]</domain>",
+          ]
+          for item in expected:
+              if s.count(item) != 1:
+                  raise SystemExit(f"expected exactly one occurrence of {item!r}")
+
+          for item in expected:
+              host = item[len("<domain>"):-len("</domain>")]
+              s = s.replace(
+                  item,
+                  f'<domain includeSubdomains="false">{host}</domain>',
+                  1,
+              )
+
+          root = ET.fromstring(s)
+          domains = root.findall("./domain-config/domain")
+          if len(domains) != 4:
+              raise SystemExit(f"expected 4 loopback domains, found {len(domains)}")
+          for node in domains:
+              if node.get("includeSubdomains") != "false":
+                  raise SystemExit("loopback domain missing includeSubdomains=false")
+          if "<domain>" in s:
+              raise SystemExit("unpatched <domain> tag remains in network security config")
+
+          p.write_text(s, encoding="utf-8")
+          print("Network Security Config lint fix: PASS")
+          PY
+          grep -q '<domain includeSubdomains="false">localhost</domain>' app/src/main/res/xml/network_security_config.xml
+          grep -q '<domain includeSubdomains="false">127.0.0.1</domain>' app/src/main/res/xml/network_security_config.xml
+          grep -q '<domain includeSubdomains="false">ip6-localhost</domain>' app/src/main/res/xml/network_security_config.xml
+          grep -q '<domain includeSubdomains="false">[::1]</domain>' app/src/main/res/xml/network_security_config.xml
+          ! grep -Eq '<domain>(localhost|127\.0\.0\.1|ip6-localhost|\[::1\])</domain>' app/src/main/res/xml/network_security_config.xml
+
       - name: Fix Android API 26 compatibility
         working-directory: build-src/jarvis-android
         shell: bash
