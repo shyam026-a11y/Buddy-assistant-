@@ -114,6 +114,24 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          # The pinned Shizuku modules are built here as standalone Gradle subprojects.
+          # The upstream build normally supplies compileSdk from shared root configuration.
+          for name in ("aidl", "shared", "api", "provider"):
+              gp = Path(name) / "build.gradle"
+              kp = Path(name) / "build.gradle.kts"
+              if gp.exists():
+                  q = gp
+                  text = q.read_text()
+                  if "compileSdk" not in text:
+                      text = text.replace("android {", "android {\n    compileSdk 36", 1)
+                      q.write_text(text)
+              elif kp.exists():
+                  q = kp
+                  text = q.read_text()
+                  if "compileSdk" not in text:
+                      text = text.replace("android {", "android {\n    compileSdk = 36", 1)
+                      q.write_text(text)
+
           p = Path("app/build.gradle.kts")
           s = p.read_text()
           maven = 'implementation("dev.ffmpegkit-maintained:kokoro-android:0.1.0")'
