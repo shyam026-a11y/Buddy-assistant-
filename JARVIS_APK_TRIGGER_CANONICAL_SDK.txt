@@ -1,0 +1,1 @@
+Canonical Jarvis APK rebuild after Shizuku standalone compileSdk fix.
