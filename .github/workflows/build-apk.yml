@@ -367,7 +367,7 @@ jobs:
           grep -q '<domain includeSubdomains="false">localhost</domain>' app/src/main/res/xml/network_security_config.xml
           grep -q '<domain includeSubdomains="false">127.0.0.1</domain>' app/src/main/res/xml/network_security_config.xml
           grep -q '<domain includeSubdomains="false">ip6-localhost</domain>' app/src/main/res/xml/network_security_config.xml
-          grep -q '<domain includeSubdomains="false">[::1]</domain>' app/src/main/res/xml/network_security_config.xml
+          grep -Fq '<domain includeSubdomains="false">[::1]</domain>' app/src/main/res/xml/network_security_config.xml
           ! grep -Eq '<domain>(localhost|127\.0\.0\.1|ip6-localhost|\[::1\])</domain>' app/src/main/res/xml/network_security_config.xml
 
       - name: Fix Android API 26 compatibility
