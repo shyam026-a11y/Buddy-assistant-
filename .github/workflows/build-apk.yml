@@ -12,23 +12,32 @@ permissions:
 env:
   ANDROID_HOME: /usr/local/lib/android/sdk
   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+  SHIZUKU_API_COMMIT: a27f6e4151ba7b39965ca47edb2bf0aeed7102e5
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
+
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout repository
+        uses: actions/checkout@v5
 
       - name: Checkout Jarvis source branch
-        run: git fetch origin jarvis-2.0.0-apk-build && git checkout --detach origin/jarvis-2.0.0-apk-build
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin jarvis-2.0.0-apk-build
+          git checkout --detach origin/jarvis-2.0.0-apk-build
 
-      - name: Java 17
+      - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Android SDK
+      - name: Install Android SDK components
+        shell: bash
         run: |
           set -euo pipefail
           SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
@@ -36,9 +45,9 @@ jobs:
             SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager -type f -print -quit)"
           fi
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-          "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+          "$SDKMANAGER"             "platform-tools"             "platforms;android-36"             "build-tools;36.0.0"             "ndk;27.2.12479018"             "cmake;3.22.1"
 
-      - name: Gradle
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: "8.13"
@@ -48,25 +57,24 @@ jobs:
         run: |
           set -euo pipefail
           test -d .jarvis-source/xzparts
-          shopt -s nullglob
-          parts=(.jarvis-source/xzparts/c*.b64)
+          mapfile -t parts < <(find .jarvis-source/xzparts -maxdepth 1 -type f -name 'c*.b64' | sort)
           test "${#parts[@]}" -eq 55
           cat "${parts[@]}" > jarvis-app.tar.xz.b64
+
           python3 - <<'PY'
           from pathlib import Path
           import base64, hashlib, lzma, tarfile
-          encoded = "".join(Path("jarvis-app.tar.xz.b64").read_text(encoding="ascii").split())
-          encoded = encoded.rstrip("=")
+
+          encoded = "".join(Path("jarvis-app.tar.xz.b64").read_text(encoding="ascii").split()).rstrip("=")
+          if not encoded or len(encoded) % 4 == 1:
+              raise SystemExit(f"invalid XZ Base64 length: {len(encoded)}")
           encoded += "=" * ((4 - len(encoded) % 4) % 4)
           raw = base64.b64decode(encoded, validate=True)
+          if raw[:6] != b"\xfd7zXZ\x00":
+              raise SystemExit("Jarvis source payload is not XZ")
           print("xz_bytes=", len(raw))
           print("xz_sha256=", hashlib.sha256(raw).hexdigest())
-          if raw[:6] != b"\xfd7zXZ\x00":
-              raise SystemExit("Jarvis source is not XZ")
-          try:
-              tar_bytes = lzma.decompress(raw)
-          except lzma.LZMAError as exc:
-              raise SystemExit(f"Jarvis XZ decompression failed: {exc}")
+          tar_bytes = lzma.decompress(raw)
           Path("jarvis-source.tar").write_bytes(tar_bytes)
           with tarfile.open("jarvis-source.tar", "r:") as tf:
               names = set(tf.getnames())
@@ -78,20 +86,52 @@ jobs:
           missing = sorted(required - names)
           if missing:
               raise SystemExit("Jarvis source missing: " + ", ".join(missing))
-          print("Jarvis XZ source integrity: PASS")
+          print("Jarvis source integrity: PASS")
           PY
+
           rm -rf build-src
           mkdir -p build-src/jarvis-android
           tar -xf jarvis-source.tar -C build-src/jarvis-android
           test -f build-src/jarvis-android/settings.gradle.kts
           test -f build-src/jarvis-android/app/build.gradle.kts
-          test -f build-src/jarvis-android/app/src/main/java/com/example/jarvis/JarvisApp.kt
+
+      - name: Add pinned Shizuku source modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/shizuku-api
+          git init -q /tmp/shizuku-api
+          git -C /tmp/shizuku-api remote add origin https://github.com/RikkaApps/Shizuku-API.git
+          git -C /tmp/shizuku-api fetch --depth 1 origin "$SHIZUKU_API_COMMIT"
+          git -C /tmp/shizuku-api checkout --detach FETCH_HEAD
+
+          cp -a /tmp/shizuku-api/aidl build-src/jarvis-android/aidl
+          cp -a /tmp/shizuku-api/shared build-src/jarvis-android/shared
+          cp -a /tmp/shizuku-api/api build-src/jarvis-android/api
+          cp -a /tmp/shizuku-api/provider build-src/jarvis-android/provider
+
+          for module in aidl shared api provider; do
+            sed -i '/^android {/a\    compileSdk 36' "build-src/jarvis-android/${module}/build.gradle"
+          done
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("build-src/jarvis-android/settings.gradle.kts")
+          s = p.read_text()
+          if 'include(":aidl", ":shared", ":api", ":provider")' not in s:
+              s += '\ninclude(":aidl", ":shared", ":api", ":provider")\n'
+          p.write_text(s)
+          PY
+
+          test -f build-src/jarvis-android/api/src/main/java/rikka/shizuku/Shizuku.java
+          test -f build-src/jarvis-android/provider/src/main/java/rikka/shizuku/ShizukuProvider.java
+
       - name: Build pinned Kokoro AAR
         shell: bash
         run: |
           set -euo pipefail
           rm -rf /tmp/kokoro-android
-          git clone --recursive --depth 1 https://github.com/ffmpegkit-maintained/kokoro-android.git /tmp/kokoro-android
+          git clone --depth 1 https://github.com/ffmpegkit-maintained/kokoro-android.git /tmp/kokoro-android
           cd /tmp/kokoro-android
           chmod +x gradlew
           cmake -S espeak-ng -B /tmp/espeak-build -DCMAKE_BUILD_TYPE=Release -DUSE_MBROLA=OFF -DUSE_LIBSONIC=OFF -DUSE_LIBPCAUDIO=OFF -DUSE_SPEECHPLAYER=OFF
@@ -103,134 +143,113 @@ jobs:
           test -f library/src/main/assets/espeak-ng-data/phontab
           ./gradlew :library:assembleRelease --no-daemon --stacktrace
           test -f library/build/outputs/aar/library-release.aar
+
           mkdir -p "$GITHUB_WORKSPACE/build-src/jarvis-android/app/libs"
           cp library/build/outputs/aar/library-release.aar "$GITHUB_WORKSPACE/build-src/jarvis-android/app/libs/kokoro-android-0.1.0.aar"
           sha256sum library/build/outputs/aar/library-release.aar
 
-      - name: Wire local Kokoro AAR
+      - name: Patch Jarvis source for build
         working-directory: build-src/jarvis-android
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          # The pinned Shizuku modules are built here as standalone Gradle subprojects.
-          # The upstream build normally supplies compileSdk from shared root configuration.
-          for name in ("aidl", "shared", "api", "provider"):
-              gp = Path(name) / "build.gradle"
-              kp = Path(name) / "build.gradle.kts"
-              if gp.exists():
-                  q = gp
-                  text = q.read_text()
-                  if "compileSdk" not in text:
-                      text = text.replace("android {", "android {\n    compileSdk 36", 1)
-                      q.write_text(text)
-              elif kp.exists():
-                  q = kp
-                  text = q.read_text()
-                  if "compileSdk" not in text:
-                      text = text.replace("android {", "android {\n    compileSdk = 36", 1)
-                      q.write_text(text)
+          cat > app/src/main/java/com/example/jarvis/android/ShizukuBackend.kt <<'EOF'
+          package com.example.jarvis.android
 
-          p = Path("app/build.gradle.kts")
-          s = p.read_text()
-          maven = 'implementation("dev.ffmpegkit-maintained:kokoro-android:0.1.0")'
-          local = 'implementation(files("libs/kokoro-android-0.1.0.aar"))'
-          if maven in s:
-              s = s.replace(maven, local)
-          elif local not in s:
-              raise SystemExit("Kokoro dependency declaration not found")
-          if 'com.microsoft.onnxruntime:onnxruntime-android:1.20.0' not in s:
-              anchor = 'implementation("com.squareup.okhttp3:okhttp:5.3.0")'
-              if anchor not in s:
-                  raise SystemExit("OkHttp dependency anchor not found")
-              s = s.replace(anchor, anchor + '\n    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")', 1)
-          p.write_text(s)
-          PY
-          test -f app/libs/kokoro-android-0.1.0.aar
-          grep -q 'kokoro-android-0.1.0.aar' app/build.gradle.kts
-          grep -q 'onnxruntime-android:1.20.0' app/build.gradle.kts
+          import android.content.Context
+          import android.content.pm.PackageManager
+          import dev.rikka.shizuku.Shizuku
+          import java.lang.reflect.Method
 
-      - name: Add pinned Shizuku source modules
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf /tmp/shizuku-api
-          git init -q /tmp/shizuku-api
-          git -C /tmp/shizuku-api remote add origin https://github.com/RikkaApps/Shizuku-API.git
-          git -C /tmp/shizuku-api fetch --depth 1 origin a27f6e4151ba7b39965ca47edb2bf0aeed7102e5
-          git -C /tmp/shizuku-api checkout --detach FETCH_HEAD
-          cp -a /tmp/shizuku-api/aidl build-src/jarvis-android/aidl
-          cp -a /tmp/shizuku-api/shared build-src/jarvis-android/shared
-          cp -a /tmp/shizuku-api/api build-src/jarvis-android/api
-          cp -a /tmp/shizuku-api/provider build-src/jarvis-android/provider
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("build-src/jarvis-android/settings.gradle.kts")
-          s = p.read_text()
-          if 'include(":aidl", ":shared", ":api", ":provider")' not in s:
-              s += '\ninclude(":aidl", ":shared", ":api", ":provider")\n'
-          p.write_text(s)
-          PY
-          test -f build-src/jarvis-android/api/src/main/java/rikka/shizuku/Shizuku.java
-          test -f build-src/jarvis-android/provider/src/main/java/rikka/shizuku/ShizukuProvider.java
-          test -f build-src/jarvis-android/aidl/src/main/aidl/moe/shizuku/server/IShizukuService.aidl
-          python3 - <<'PY'
-          from pathlib import Path
-          for module in ("aidl", "shared", "api", "provider"):
-              p = Path("build-src/jarvis-android") / module / "build.gradle"
-              s = p.read_text()
-              if "compileSdk" not in s:
-                  s = s.replace("android {", "android {\n    compileSdk 36", 1)
-                  p.write_text(s)
-          PY
-          grep -q 'compileSdk 36' build-src/jarvis-android/aidl/build.gradle
-          grep -q 'compileSdk 36' build-src/jarvis-android/shared/build.gradle
-          grep -q 'compileSdk 36' build-src/jarvis-android/api/build.gradle
-          grep -q 'compileSdk 36' build-src/jarvis-android/provider/build.gradle
+          class ShizukuBackend(private val context: Context) : ControlBackend {
+              override val name = "shizuku"
 
-      - name: Patch Jarvis compile surface
-        working-directory: build-src/jarvis-android
-        shell: bash
-        run: |
-          set -euo pipefail
+              override fun available(): Boolean = runCatching {
+                  Shizuku.pingBinder() &&
+                      Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+              }.getOrDefault(false)
+
+              override suspend fun openApp(packageName: String): Result<Unit> = runCatching {
+                  val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+                      ?: error("No launcher activity")
+                  intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                  context.startActivity(intent)
+              }
+
+              override suspend fun tap(x: Int, y: Int): Result<Unit> =
+                  runCatching { exec("input", "tap", x.toString(), y.toString()) }
+
+              override suspend fun typeText(text: String): Result<Unit> =
+                  runCatching { exec("input", "text", text.replace(" ", "%s")) }
+
+              override suspend fun back(): Result<Unit> =
+                  runCatching { exec("input", "keyevent", "4") }
+
+              override suspend fun screenText(): Result<String> =
+                  runCatching { exec("dumpsys", "window", "windows") }
+
+              private fun exec(vararg cmd: String): String {
+                  check(available()) { "Shizuku unavailable or unauthorized" }
+                  val method = SHIZUKU_NEW_PROCESS
+                  val process = method.invoke(null, cmd, null, null) as Process
+                  val stdout = process.inputStream.bufferedReader().use { it.readText() }
+                  val stderr = process.errorStream.bufferedReader().use { it.readText() }
+                  val exit = process.waitFor()
+                  check(exit == 0) { stderr.take(500) }
+                  return stdout
+              }
+
+              private companion object {
+                  val SHIZUKU_NEW_PROCESS: Method by lazy {
+                      Class.forName("rikka.shizuku.Shizuku")
+                          .getDeclaredMethod(
+                              "newProcess",
+                              Array<String>::class.java,
+                              Array<String>::class.java,
+                              String::class.java
+                          )
+                          .apply { isAccessible = true }
+                  }
+              }
+          }
+          EOF
+
           python3 - <<'PY'
           from pathlib import Path
 
-          def add_import(path, import_line, anchor):
+          def ensure_import(path, line, anchor):
               p = Path(path)
               s = p.read_text()
-              if import_line not in s:
-                  s = s.replace(anchor, import_line + chr(10) + anchor, 1)
+              if line not in s:
+                  s = s.replace(anchor, line + chr(10) + anchor, 1)
                   p.write_text(s)
 
-          p = Path("app/src/main/java/com/example/jarvis/JarvisApp.kt")
-          s = p.read_text()
-          if "import com.example.jarvis.voice.VoicePreferences" not in s:
-              s = s.replace("import com.example.jarvis.voice.AndroidPcmCapture", "import com.example.jarvis.voice.VoicePreferences" + chr(10) + "import com.example.jarvis.voice.AndroidPcmCapture", 1)
-              p.write_text(s)
+          ensure_import(
+              "app/src/main/java/com/example/jarvis/JarvisApp.kt",
+              "import com.example.jarvis.voice.VoicePreferences",
+              "import com.example.jarvis.voice.AndroidPcmCapture",
+          )
 
           p = Path("app/src/main/java/com/example/jarvis/voice/VoiceSettings.kt")
           s = p.read_text()
           if "fun setSystemFallbackAllowed(allowed: Boolean)" not in s:
               needle = "    fun getTuning(): VoiceTuning = tuning"
-              if needle not in s:
-                  raise SystemExit("Voice controller insertion point not found")
-              s = s.replace(
-                  needle,
-                  "    fun setSystemFallbackAllowed(allowed: Boolean) {" + chr(10) +
-                  "        output.setSystemFallbackAllowed(allowed)" + chr(10) +
-                  "    }" + chr(10) + chr(10) + needle,
-                  1,
-              )
-              p.write_text(s)
+              if needle in s:
+                  s = s.replace(
+                      needle,
+                      "    fun setSystemFallbackAllowed(allowed: Boolean) {" + chr(10) +
+                      "        output.setSystemFallbackAllowed(allowed)" + chr(10) +
+                      "    }" + chr(10) + chr(10) + needle,
+                      1,
+                  )
+                  p.write_text(s)
 
           p = Path("app/src/main/java/com/example/jarvis/MainActivity.kt")
           s = p.read_text()
-          if "@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)" not in s:
+          if not s.startswith("@file:OptIn("):
               s = "@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)" + chr(10) + s
-          add_import("app/src/main/java/com/example/jarvis/MainActivity.kt", "import kotlinx.coroutines.launch", "import java.util.Locale")
-          s = p.read_text()
+          if "import kotlinx.coroutines.launch" not in s:
+              s = s.replace("import java.util.Locale", "import kotlinx.coroutines.launch" + chr(10) + "import java.util.Locale", 1)
           s = s.replace(
               "onOpenAccessibility = { startActivitySafely(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },",
               "onOpenAccessibility = { app.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) },",
@@ -238,17 +257,17 @@ jobs:
           )
           p.write_text(s)
 
-          add_import(
+          ensure_import(
               "app/src/main/java/com/example/jarvis/agent/JarvisEngine.kt",
               "import kotlinx.coroutines.launch",
               "import com.example.jarvis.security.MemorySafetyPolicy",
           )
-          add_import(
+          ensure_import(
               "app/src/main/java/com/example/jarvis/task/TaskManager.kt",
               "import kotlinx.coroutines.sync.Mutex",
               "import kotlinx.coroutines.channels.Channel",
           )
-          add_import(
+          ensure_import(
               "app/src/main/java/com/example/jarvis/task/TaskManager.kt",
               "import kotlinx.coroutines.sync.withLock",
               "import kotlinx.coroutines.sync.Mutex",
@@ -256,33 +275,28 @@ jobs:
 
           p = Path("app/build.gradle.kts")
           lines = p.read_text().splitlines()
-          lines = [
-              line for line in lines
-              if "dev.rikka.shizuku:" not in line
-              and "shizuku-api-13.1.5.jar" not in line
-              and "shizuku-shared-13.1.5.jar" not in line
-              and "shizuku-aidl-13.1.5.jar" not in line
-              and "provider-13.1.5.aar" not in line
-              and "api-13.1.5.aar" not in line
-              and "shared-13.1.5.aar" not in line
-              and "aidl-13.1.5.aar" not in line
-          ]
+          lines = [line for line in lines if "dev.rikka.shizuku:" not in line and "shizuku-api-13.1.5.jar" not in line and "provider-13.1.5.aar" not in line]
           anchor = 'implementation("com.squareup.okhttp3:okhttp:5.3.0")'
           i = next((i for i, line in enumerate(lines) if anchor in line), None)
           if i is None:
               raise SystemExit("OkHttp dependency anchor not found")
-          lines[i + 1:i + 1] = [
-              '    implementation(project(":api"))',
-              '    implementation(project(":provider"))',
-          ]
+          if 'implementation(project(":api"))' not in lines:
+              lines[i + 1:i + 1] = [
+                  '    implementation(project(":api"))',
+                  '    implementation(project(":provider"))',
+              ]
+          if 'implementation(files("libs/kokoro-android-0.1.0.aar"))' not in lines:
+              for idx, line in enumerate(lines):
+                  if 'dev.ffmpegkit-maintained:kokoro-android:0.1.0' in line:
+                      lines[idx] = '    implementation(files("libs/kokoro-android-0.1.0.aar"))'
+                      break
           p.write_text(chr(10).join(lines) + chr(10))
           PY
 
           grep -q 'implementation(project(":api"))' app/build.gradle.kts
           grep -q 'implementation(project(":provider"))' app/build.gradle.kts
-          grep -q 'fun setSystemFallbackAllowed' app/src/main/java/com/example/jarvis/voice/VoiceSettings.kt
-          grep -q 'import kotlinx.coroutines.launch' app/src/main/java/com/example/jarvis/MainActivity.kt
-          grep -q 'import kotlinx.coroutines.sync.Mutex' app/src/main/java/com/example/jarvis/task/TaskManager.kt
+          grep -q 'kokoro-android-0.1.0.aar' app/build.gradle.kts
+          grep -q '@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)' app/src/main/java/com/example/jarvis/MainActivity.kt
 
       - name: Pin AndroidX compatibility set
         working-directory: build-src/jarvis-android
@@ -294,26 +308,19 @@ jobs:
           p = Path("app/build.gradle.kts")
           s = p.read_text()
           replacements = {
-              'androidx.compose:compose-bom:2026.09.00': 'androidx.compose:compose-bom:2025.09.00',
-              'androidx.core:core-ktx:1.19.0': 'androidx.core:core-ktx:1.17.0',
-              'androidx.activity:activity-compose:1.13.0': 'androidx.activity:activity-compose:1.11.0',
-              'androidx.lifecycle:lifecycle-runtime-compose:2.10.0': 'androidx.lifecycle:lifecycle-runtime-compose:2.9.4',
-              'androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0': 'androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4',
-              'androidx.navigation:navigation-compose:2.9.8': 'androidx.navigation:navigation-compose:2.9.5',
-              'androidx.work:work-runtime-ktx:2.11.2': 'androidx.work:work-runtime-ktx:2.10.5',
-              'androidx.datastore:datastore-preferences:1.2.1': 'androidx.datastore:datastore-preferences:1.1.7',
+              "androidx.compose:compose-bom:2026.09.00": "androidx.compose:compose-bom:2025.09.00",
+              "androidx.core:core-ktx:1.19.0": "androidx.core:core-ktx:1.17.0",
+              "androidx.activity:activity-compose:1.13.0": "androidx.activity:activity-compose:1.11.0",
+              "androidx.lifecycle:lifecycle-runtime-compose:2.10.0": "androidx.lifecycle:lifecycle-runtime-compose:2.9.4",
+              "androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0": "androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4",
+              "androidx.navigation:navigation-compose:2.9.8": "androidx.navigation:navigation-compose:2.9.5",
+              "androidx.work:work-runtime-ktx:2.11.2": "androidx.work:work-runtime-ktx:2.10.5",
+              "androidx.datastore:datastore-preferences:1.2.1": "androidx.datastore:datastore-preferences:1.1.7",
           }
           for old, new in replacements.items():
               s = s.replace(old, new)
           p.write_text(s)
           PY
-          grep -q 'compose-bom:2025.09.00' app/build.gradle.kts
-          grep -q 'core-ktx:1.17.0' app/build.gradle.kts
-          grep -q 'activity-compose:1.11.0' app/build.gradle.kts
-          grep -q 'lifecycle-runtime-compose:2.9.4' app/build.gradle.kts
-          grep -q 'navigation-compose:2.9.5' app/build.gradle.kts
-          grep -q 'work-runtime-ktx:2.10.5' app/build.gradle.kts
-          grep -q 'datastore-preferences:1.1.7' app/build.gradle.kts
 
       - name: Set GLM-5.2 defaults
         working-directory: build-src/jarvis-android
@@ -322,53 +329,23 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          import re
-          p=Path("app/build.gradle.kts")
-          s=p.read_text()
-          s=s.replace('    // Current maintained Android wrapper around Kokoro-82M, on-device neural TTS.\n    implementation("dev.ffmpegkit-maintained:kokoro-android:0.1.0")\n','')
-          s=s.replace('implementation("dev.ffmpegkit-maintained:kokoro-android:0.1.0")','')
-          p.write_text(s)
-
-          p=Path("app/src/main/java/com/example/jarvis/voice/TtsEngine.kt")
-          s=p.read_text()
-          s=s.replace('import dev.ffmpegkit.kokoro.KokoroTTS\n','')
-          start=s.index('class KokoroSpeechEngine(')
-          end=s.index('/** Built-in Android fallback', start)
-          replacement='''class KokoroSpeechEngine(
-              private val context: Context,
-              private val models: KokoroModelRepository,
-              private val tracer: Tracer,
-              private val variant: KokoroModelVariant = KokoroModelVariant.MOBILE_Q8F16,
-              private val profile: VoiceProfile = JarvisVoiceProfiles.Aurora,
-          ) : SpeechSynthesisEngine {
-              private val system = AndroidSystemSpeechEngine(context)
-
-              override suspend fun prepare(): Result<Unit> = system.prepare()
-              override fun isReady(): Boolean = system.isReady()
-
-              override suspend fun speak(text: String): Result<Unit> = runCatching {
-                  require(text.isNotBlank()) { "TTS text is empty" }
-                  val span = tracer.start("tts", "${profile.id}:${variant}", "android-system-tts")
-                  val result = system.speak(normalize(text))
-                  if (result.isSuccess) span.end(true, profile.id)
-                  else span.end(false, result.exceptionOrNull()?.javaClass?.simpleName)
-                  result.getOrThrow()
-              }
-
-              override fun stop() = system.stop()
-              override fun release() = system.release()
-              fun setTuning(value: VoiceTuning) = system.setTuning(value)
-              private fun normalize(raw: String): String = raw.trim().replace(Regex("\\s+"), " ")
-          }
-
-'''
-          s=s[:start]+replacement+s[end:]
-          p.write_text(s)
+          p = Path("app/build.gradle.kts")
+          lines = p.read_text().splitlines()
+          out = []
+          base = model = False
+          for line in lines:
+              if 'buildConfigField("String", "MODEL_BASE_URL"' in line:
+                  line = '        buildConfigField("String", "MODEL_BASE_URL", "\"https://api.z.ai/api/paas/v4/chat/completions\"")'
+                  base = True
+              elif 'buildConfigField("String", "MODEL_NAME"' in line:
+                  line = '        buildConfigField("String", "MODEL_NAME", "\"glm-5.2\"")'
+                  model = True
+              out.append(line)
+          if not (base and model):
+              raise SystemExit(f"GLM config declarations not found: base={base}, model={model}")
+          p.write_text(chr(10).join(out) + chr(10))
           PY
-          grep -q 'MODEL_BASE_URL' app/build.gradle.kts
-          grep -q 'MODEL_NAME' app/build.gradle.kts
-          ! grep -q 'kokoro-android:0.1.0' app/build.gradle.kts
-          ! grep -q 'dev.ffmpegkit.kokoro' app/src/main/java/com/example/jarvis/voice/TtsEngine.kt
+
       - name: Test
         working-directory: build-src/jarvis-android
         run: gradle :app:testDebugUnitTest --no-daemon --stacktrace
@@ -382,16 +359,20 @@ jobs:
         run: gradle :app:assembleDebug --no-daemon --stacktrace
 
       - name: Collect APK
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          cp build-src/jarvis-android/app/build/outputs/apk/debug/*.apk artifacts/jarvis-debug.apk
+          apk="$(find build-src/jarvis-android/app/build/outputs/apk/debug -type f -name '*.apk' -print -quit)"
+          test -n "$apk"
+          cp "$apk" artifacts/jarvis-debug.apk
           sha256sum artifacts/jarvis-debug.apk > artifacts/SHA256SUMS.txt
           printf 'model=glm-5.2\nsource=jarvis-2.0.0-apk-build\n' > artifacts/BUILD_INFO.txt
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Jarvis APK
+        uses: actions/upload-artifact@v4
         with:
           name: jarvis-glm-5.2-apk
-          path: artifacts
+          path: artifacts/
           if-no-files-found: error
           retention-days: 90
