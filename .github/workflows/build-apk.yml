@@ -38,21 +38,6 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
           "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
 
-      - name: Build pinned Kokoro AAR
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf /tmp/kokoro-android
-          git clone --recursive --depth 1 https://github.com/ffmpegkit-maintained/kokoro-android.git /tmp/kokoro-android
-          cd /tmp/kokoro-android
-          chmod +x gradlew scripts/fetch-espeak-data.sh
-          ./scripts/fetch-espeak-data.sh
-          ./gradlew :library:assembleRelease --no-daemon --stacktrace
-          test -f library/build/outputs/aar/library-release.aar
-          mkdir -p "$GITHUB_WORKSPACE/build-src/jarvis-android/app/libs"
-          cp library/build/outputs/aar/library-release.aar              "$GITHUB_WORKSPACE/build-src/jarvis-android/app/libs/kokoro-android-0.1.0.aar"
-          sha256sum library/build/outputs/aar/library-release.aar
-
       - name: Gradle
         uses: gradle/actions/setup-gradle@v5
         with:
@@ -101,27 +86,25 @@ jobs:
           test -f build-src/jarvis-android/settings.gradle.kts
           test -f build-src/jarvis-android/app/build.gradle.kts
           test -f build-src/jarvis-android/app/src/main/java/com/example/jarvis/JarvisApp.kt
-      - name: Wire local Kokoro AAR
+      - name: Verify Kokoro dependency
         working-directory: build-src/jarvis-android
         shell: bash
         run: |
           set -euo pipefail
+          grep -q 'dev.ffmpegkit-maintained:kokoro-android:0.1.0' app/build.gradle.kts
           python3 - <<'PY'
           from pathlib import Path
           p = Path("app/build.gradle.kts")
           s = p.read_text()
-          old = 'implementation("dev.ffmpegkit-maintained:kokoro-android:0.1.0")'
-          if old in s:
-              s = s.replace(old, 'implementation(files("libs/kokoro-android-0.1.0.aar"))')
           if 'com.microsoft.onnxruntime:onnxruntime-android:1.20.0' not in s:
               anchor = 'implementation("com.squareup.okhttp3:okhttp:5.3.0")'
-              s = s.replace(anchor, anchor + '\n    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")')
+              if anchor not in s:
+                  raise SystemExit("OkHttp dependency anchor not found")
+              s = s.replace(anchor, anchor + '\\n    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")', 1)
           p.write_text(s)
           PY
-          test -f app/libs/kokoro-android-0.1.0.aar
-          grep -q 'kokoro-android-0.1.0.aar' app/build.gradle.kts
+          grep -q 'dev.ffmpegkit-maintained:kokoro-android:0.1.0' app/build.gradle.kts
           grep -q 'onnxruntime-android:1.20.0' app/build.gradle.kts
-
       - name: Set GLM-5.2 defaults
         working-directory: build-src/jarvis-android
         shell: bash
