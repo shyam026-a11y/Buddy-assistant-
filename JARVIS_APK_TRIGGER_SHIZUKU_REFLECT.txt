@@ -1,0 +1,1 @@
+Trigger canonical Jarvis APK build after making Shizuku optional at compile time.
