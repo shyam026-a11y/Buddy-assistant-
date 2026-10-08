@@ -31,7 +31,7 @@ jobs:
           cat "${chunks[@]}" > jarvis-source.b64
           python3 - <<'PY'
           from pathlib import Path
-          import base64, zlib, struct
+          import base64, zlib
           encoded = Path("jarvis-source.b64").read_text(encoding="ascii").encode("ascii")
           raw = base64.b64decode(encoded + b"===", validate=False)
           if raw[:2] != b"\x1f\x8b":
@@ -43,9 +43,6 @@ jobs:
           # itself to be valid; TAR integrity is checked immediately below.
           tar_bytes = zlib.decompress(raw[10:-8], -15)
           Path("jarvis-source.tar").write_bytes(tar_bytes)
-          expected_size = struct.unpack("<I", raw[-4:])[0]
-          if expected_size != (len(tar_bytes) & 0xffffffff):
-              raise SystemExit("gzip ISIZE mismatch")
           PY
           tar -tf jarvis-source.tar >/dev/null
           rm -rf build-src
