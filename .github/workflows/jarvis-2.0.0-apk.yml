@@ -3,6 +3,8 @@ name: Jarvis GLM-5.2 APK
 on:
   push:
     branches: [jarvis-2.0.0-release]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -40,7 +42,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           python3 - <<'PY'
           from pathlib import Path
 
@@ -86,7 +87,6 @@ jobs:
               s = s.replace(marker, addition, 1)
           p.write_text(s)
           PY
-
           grep -q 'glm-5.2' app/build.gradle.kts
           grep -q 'Use GLM-5.2' app/src/main/java/com/example/jarvis/MainActivity.kt
           echo "GLM-5.2 wiring: PASS"
