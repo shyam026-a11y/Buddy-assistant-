@@ -231,7 +231,7 @@ jobs:
           grep -q 'kotlinx.coroutines.launch' app/src/main/java/com/example/jarvis/MainActivity.kt
           grep -q 'kotlinx.coroutines.launch' app/src/main/java/com/example/jarvis/agent/JarvisEngine.kt
           grep -q 'kotlinx.coroutines.sync.Mutex' app/src/main/java/com/example/jarvis/task/TaskManager.kt
-          grep -q 'dev.rikka.shizuku:api:12.2.0' app/build.gradle.kts
+          grep -q 'dev.rikka.shizuku:api:13.1.5' app/build.gradle.kts
 
       - name: Pin AndroidX compatibility set
         working-directory: build-src/jarvis-android
