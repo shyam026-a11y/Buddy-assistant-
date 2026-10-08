@@ -1,0 +1,1 @@
+Trigger final Jarvis APK build after MemoryStore API compatibility fix.
