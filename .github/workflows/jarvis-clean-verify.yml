@@ -1,0 +1,48 @@
+name: Jarvis Clean Payload Verify
+
+on:
+  push:
+    branches: [jarvis-2.0.0-apk-build]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify clean Jarvis payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin jarvis-2.0.0-release
+          mkdir -p .jarvis-clean
+          git show origin/jarvis-2.0.0-release:.jarvis-clean/p01.b64 > .jarvis-clean/p01.b64
+          git show origin/jarvis-2.0.0-release:.jarvis-clean/p02.b64 > .jarvis-clean/p02.b64
+          git show origin/jarvis-2.0.0-release:.jarvis-clean/p03.b64 > .jarvis-clean/p03.b64
+          git show origin/jarvis-2.0.0-release:.jarvis-clean/p04.b64 > .jarvis-clean/p04.b64
+          git show origin/jarvis-2.0.0-release:.jarvis-clean/p05.b64 > .jarvis-clean/p05.b64
+          cat .jarvis-clean/p01.b64 .jarvis-clean/p02.b64 .jarvis-clean/p03.b64 .jarvis-clean/p04.b64 .jarvis-clean/p05.b64 | tr -d '[:space:]' > jarvis-source.b64
+          python3 - <<'PY'
+          import base64, gzip, hashlib, tarfile
+          from pathlib import Path
+          s = Path("jarvis-source.b64").read_text().rstrip("=")
+          s += "=" * ((4 - len(s) % 4) % 4)
+          raw = base64.b64decode(s, validate=True)
+          print("gzip_bytes", len(raw))
+          print("gzip_sha256", hashlib.sha256(raw).hexdigest())
+          tar_bytes = gzip.decompress(raw)
+          Path("jarvis-source.tar").write_bytes(tar_bytes)
+          with tarfile.open("jarvis-source.tar", "r:") as tf:
+              names = set(tf.getnames())
+          required = {"jarvis-android/app/build.gradle.kts", "jarvis-android/app/src/main/java/com/example/jarvis/JarvisApp.kt"}
+          missing = sorted(required - names)
+          if missing:
+              raise SystemExit("missing: " + ", ".join(missing))
+          print("JARVIS_CLEAN_PAYLOAD=PASS")
+          print("tar_bytes", len(tar_bytes))
+          PY
