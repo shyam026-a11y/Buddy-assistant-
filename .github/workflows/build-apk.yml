@@ -389,7 +389,11 @@ class ShizukuBackend(private val context: Context) : ControlBackend {
           ! grep -q 'import dev.rikka.shizuku.Shizuku' app/src/main/java/com/example/jarvis/android/ShizukuBackend.kt
       - name: Test
         working-directory: build-src/jarvis-android
-        run: gradle :app:testDebugUnitTest --no-daemon --stacktrace
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ../../artifacts
+          gradle :app:testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee ../../artifacts/test.log
 
       - name: Lint
         working-directory: build-src/jarvis-android
