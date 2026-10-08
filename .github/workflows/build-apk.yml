@@ -320,6 +320,23 @@ jobs:
           grep -q 'MODEL_BASE_URL' app/build.gradle.kts
           grep -q 'MODEL_NAME' app/build.gradle.kts
           grep -q 'glm-5.2' app/build.gradle.kts
+      - name: Fix Android API 26 compatibility
+        working-directory: build-src/jarvis-android
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("app/src/main/java/com/example/jarvis/memory/MemoryStore.kt")
+          s = p.read_text()
+          old = "items.removeFirst()"
+          new = "items.removeAt(0)"
+          if old in s:
+              s = s.replace(old, new)
+          p.write_text(s)
+          PY
+          ! grep -q 'items.removeFirst()' app/src/main/java/com/example/jarvis/memory/MemoryStore.kt
+          grep -q 'items.removeAt(0)' app/src/main/java/com/example/jarvis/memory/MemoryStore.kt
       - name: Decouple Shizuku compile-time API
         working-directory: build-src/jarvis-android
         shell: bash
