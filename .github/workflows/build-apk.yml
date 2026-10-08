@@ -148,6 +148,13 @@ jobs:
           test -s app/libs/shared-13.1.5.aar
           test -s app/libs/aidl-13.1.5.aar
           test -s app/libs/provider-13.1.5.aar
+          unzip -p app/libs/api-13.1.5.aar classes.jar > app/libs/shizuku-api-13.1.5.jar
+          unzip -p app/libs/shared-13.1.5.aar classes.jar > app/libs/shizuku-shared-13.1.5.jar
+          unzip -p app/libs/aidl-13.1.5.aar classes.jar > app/libs/shizuku-aidl-13.1.5.jar
+          test -s app/libs/shizuku-api-13.1.5.jar
+          test -s app/libs/shizuku-shared-13.1.5.jar
+          test -s app/libs/shizuku-aidl-13.1.5.jar
+          unzip -l app/libs/shizuku-api-13.1.5.jar | grep -q 'rikka/shizuku/Shizuku.class'
 
           python3 - <<'PY'
           from pathlib import Path
@@ -207,15 +214,15 @@ jobs:
           if i is None:
               raise SystemExit("OkHttp dependency anchor not found")
           lines[i + 1:i + 1] = [
-              '    implementation(files("libs/api-13.1.5.aar"))',
-              '    implementation(files("libs/shared-13.1.5.aar"))',
-              '    implementation(files("libs/aidl-13.1.5.aar"))',
+              '    implementation(files("libs/shizuku-api-13.1.5.jar"))',
+              '    implementation(files("libs/shizuku-shared-13.1.5.jar"))',
+              '    implementation(files("libs/shizuku-aidl-13.1.5.jar"))',
               '    implementation(files("libs/provider-13.1.5.aar"))',
           ]
           p.write_text(chr(10).join(lines) + chr(10))
           PY
 
-          grep -q 'api-13.1.5.aar' app/build.gradle.kts
+          grep -q 'shizuku-api-13.1.5.jar' app/build.gradle.kts
           grep -q 'provider-13.1.5.aar' app/build.gradle.kts
           grep -q 'fun setSystemFallbackAllowed' app/src/main/java/com/example/jarvis/voice/VoiceSettings.kt
           grep -q 'import kotlinx.coroutines.launch' app/src/main/java/com/example/jarvis/MainActivity.kt
