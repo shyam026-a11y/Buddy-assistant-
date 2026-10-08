@@ -1,0 +1,1 @@
+Trigger canonical Jarvis APK build from stable workflow baseline plus Shizuku compileSdk 36 fix.
