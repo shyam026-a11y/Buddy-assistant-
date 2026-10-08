@@ -24,33 +24,38 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -d .jarvis-source/pkg
-          shopt -s nullglob
-          chunks=(.jarvis-source/pkg/q*.b64)
-          test "${#chunks[@]}" -eq 16
-          cat "${chunks[@]}" > jarvis-source.b64
+          test -f .jarvis-source/jarvis-source-2.0.0.tar.gz.b64
           python3 - <<'PY'
           from pathlib import Path
-          import base64, zlib
-          encoded = Path("jarvis-source.b64").read_text(encoding="ascii").encode("ascii")
-          raw = base64.b64decode(encoded + b"===", validate=False)
+          import base64, gzip, hashlib, tarfile
+          encoded = Path(".jarvis-source/jarvis-source-2.0.0.tar.gz.b64").read_text(encoding="ascii")
+          encoded = "".join(encoded.split())
+          if not encoded or len(encoded) % 4 != 0:
+              raise SystemExit(f"invalid Base64 length: {len(encoded)}")
+          raw = base64.b64decode(encoded, validate=True)
           if raw[:2] != b"\x1f\x8b":
-              raise SystemExit("not a gzip stream")
-          if len(raw) < 18:
-              raise SystemExit("gzip stream too short")
-          # Decompress the raw DEFLATE payload directly. This bypasses the
-          # damaged gzip CRC footer but still requires the compressed stream
-          # itself to be valid; TAR integrity is checked immediately below.
-          tar_bytes = zlib.decompress(raw[10:-8], -15)
+              raise SystemExit("source bundle is not gzip")
+          print("source_gzip_bytes=", len(raw))
+          print("source_gzip_sha256=", hashlib.sha256(raw).hexdigest())
+          tar_bytes = gzip.decompress(raw)
+          print("source_tar_bytes=", len(tar_bytes))
           Path("jarvis-source.tar").write_bytes(tar_bytes)
+          with tarfile.open("jarvis-source.tar", "r:") as tf:
+              names = tf.getnames()
+              required = {
+                  "jarvis-android/app/build.gradle.kts",
+                  "jarvis-android/app/src/main/java/com/example/jarvis/JarvisApp.kt",
+              }
+              missing = sorted(required - set(names))
+              if missing:
+                  raise SystemExit("source bundle missing required files: " + ", ".join(missing))
+          print("Jarvis source bundle integrity: PASS")
           PY
-          tar -tf jarvis-source.tar >/dev/null
           rm -rf build-src
           mkdir -p build-src
           tar -xf jarvis-source.tar -C build-src
           test -f build-src/jarvis-android/app/build.gradle.kts
           test -f build-src/jarvis-android/app/src/main/java/com/example/jarvis/JarvisApp.kt
-
       - name: Enable GLM-5.2 defaults
         working-directory: build-src/jarvis-android
         shell: bash
