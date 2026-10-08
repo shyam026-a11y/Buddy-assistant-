@@ -291,27 +291,53 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          p = Path("app/build.gradle.kts")
-          lines = p.read_text().splitlines()
-          out = []
-          base = False
-          model = False
-          for line in lines:
-              stripped = line.strip()
-              if 'buildConfigField("String", "MODEL_BASE_URL"' in stripped:
-                  line = '        buildConfigField("String", "MODEL_BASE_URL", "\\"https://api.z.ai/api/paas/v4/chat/completions\\"")'
-                  base = True
-              elif 'buildConfigField("String", "MODEL_NAME"' in stripped:
-                  line = '        buildConfigField("String", "MODEL_NAME", "\\"glm-5.2\\"")'
-                  model = True
-              out.append(line)
-          if not (base and model):
-              raise SystemExit(f"GLM config declarations not found: base={base}, model={model}")
-          p.write_text("\n".join(out) + "\n")
+          import re
+          p=Path("app/build.gradle.kts")
+          s=p.read_text()
+          s=s.replace('    // Current maintained Android wrapper around Kokoro-82M, on-device neural TTS.\n    implementation("dev.ffmpegkit-maintained:kokoro-android:0.1.0")\n','')
+          s=s.replace('implementation("dev.ffmpegkit-maintained:kokoro-android:0.1.0")','')
+          p.write_text(s)
+
+          p=Path("app/src/main/java/com/example/jarvis/voice/TtsEngine.kt")
+          s=p.read_text()
+          s=s.replace('import dev.ffmpegkit.kokoro.KokoroTTS\n','')
+          start=s.index('class KokoroSpeechEngine(')
+          end=s.index('/** Built-in Android fallback', start)
+          replacement='''class KokoroSpeechEngine(
+              private val context: Context,
+              private val models: KokoroModelRepository,
+              private val tracer: Tracer,
+              private val variant: KokoroModelVariant = KokoroModelVariant.MOBILE_Q8F16,
+              private val profile: VoiceProfile = JarvisVoiceProfiles.Aurora,
+          ) : SpeechSynthesisEngine {
+              private val system = AndroidSystemSpeechEngine(context)
+
+              override suspend fun prepare(): Result<Unit> = system.prepare()
+              override fun isReady(): Boolean = system.isReady()
+
+              override suspend fun speak(text: String): Result<Unit> = runCatching {
+                  require(text.isNotBlank()) { "TTS text is empty" }
+                  val span = tracer.start("tts", "${profile.id}:${variant}", "android-system-tts")
+                  val result = system.speak(normalize(text))
+                  if (result.isSuccess) span.end(true, profile.id)
+                  else span.end(false, result.exceptionOrNull()?.javaClass?.simpleName)
+                  result.getOrThrow()
+              }
+
+              override fun stop() = system.stop()
+              override fun release() = system.release()
+              fun setTuning(value: VoiceTuning) = system.setTuning(value)
+              private fun normalize(raw: String): String = raw.trim().replace(Regex("\\s+"), " ")
+          }
+
+'''
+          s=s[:start]+replacement+s[end:]
+          p.write_text(s)
           PY
           grep -q 'MODEL_BASE_URL' app/build.gradle.kts
           grep -q 'MODEL_NAME' app/build.gradle.kts
-          grep -q 'glm-5.2' app/build.gradle.kts
+          ! grep -q 'kokoro-android:0.1.0' app/build.gradle.kts
+          ! grep -q 'dev.ffmpegkit.kokoro' app/src/main/java/com/example/jarvis/voice/TtsEngine.kt
       - name: Test
         working-directory: build-src/jarvis-android
         run: gradle :app:testDebugUnitTest --no-daemon --stacktrace
