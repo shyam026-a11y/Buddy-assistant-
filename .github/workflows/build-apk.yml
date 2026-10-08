@@ -87,21 +87,33 @@ jobs:
           test -f build-src/jarvis-android/app/build.gradle.kts
           test -f build-src/jarvis-android/app/src/main/java/com/example/jarvis/JarvisApp.kt
       - name: Set GLM-5.2 defaults
+        working-directory: build-src/jarvis-android
+        shell: bash
         run: |
           set -euo pipefail
-          cd build-src/jarvis-android
           python3 - <<'PY'
           from pathlib import Path
-          p=Path("app/build.gradle.kts")
-          s=p.read_text()
-          s=s.replace('buildConfigField("String", "MODEL_BASE_URL", "\"\")',
-                      'buildConfigField("String", "MODEL_BASE_URL", "\"https://api.z.ai/api/paas/v4/chat/completions\"")')
-          s=s.replace('buildConfigField("String", "MODEL_NAME", "\"\")',
-                      'buildConfigField("String", "MODEL_NAME", "\"glm-5.2\"")')
-          p.write_text(s)
+          p = Path("app/build.gradle.kts")
+          lines = p.read_text().splitlines()
+          out = []
+          base = False
+          model = False
+          for line in lines:
+              stripped = line.strip()
+              if 'buildConfigField("String", "MODEL_BASE_URL"' in stripped:
+                  line = '        buildConfigField("String", "MODEL_BASE_URL", "\\"https://api.z.ai/api/paas/v4/chat/completions\\"")'
+                  base = True
+              elif 'buildConfigField("String", "MODEL_NAME"' in stripped:
+                  line = '        buildConfigField("String", "MODEL_NAME", "\\"glm-5.2\\"")'
+                  model = True
+              out.append(line)
+          if not (base and model):
+              raise SystemExit(f"GLM config declarations not found: base={base}, model={model}")
+          p.write_text("\n".join(out) + "\n")
           PY
-          grep -q "glm-5.2" app/build.gradle.kts
-
+          grep -q 'MODEL_BASE_URL' app/build.gradle.kts
+          grep -q 'MODEL_NAME' app/build.gradle.kts
+          grep -q 'glm-5.2' app/build.gradle.kts
       - name: Test
         working-directory: build-src/jarvis-android
         run: gradle :app:testDebugUnitTest --no-daemon --stacktrace
