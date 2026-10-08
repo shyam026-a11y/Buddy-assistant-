@@ -58,8 +58,8 @@ jobs:
           print("Jarvis XZ source integrity: PASS")
           PY
           rm -rf build-src
-          mkdir -p build-src
-          tar -xf jarvis-source.tar -C build-src
+          mkdir -p build-src/jarvis-android
+          tar -xf jarvis-source.tar -C build-src/jarvis-android
           test -f build-src/jarvis-android/settings.gradle.kts
           test -f build-src/jarvis-android/app/build.gradle.kts
           test -f build-src/jarvis-android/app/src/main/java/com/example/jarvis/JarvisApp.kt
