@@ -1,0 +1,1 @@
+Trigger Jarvis APK after deterministic GLM-5.2 default wiring.
