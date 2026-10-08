@@ -141,21 +141,12 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          def add_import(path: str, import_line: str, anchor: str):
+          def add_import(path, import_line, anchor):
               p = Path(path)
               s = p.read_text()
               if import_line not in s:
-                  s = s.replace(anchor, import_line + "\n" + anchor, 1)
-              p.write_text(s)
-
-          def replace_once(path: str, old: str, new: str, label: str):
-              p = Path(path)
-              s = p.read_text()
-              if old in s:
-                  s = s.replace(old, new, 1)
-              elif new not in s:
-                  raise SystemExit(f"{label}: expected source pattern not found")
-              p.write_text(s)
+                  s = s.replace(anchor, import_line + chr(10) + anchor, 1)
+                  p.write_text(s)
 
           add_import(
               "app/src/main/java/com/example/jarvis/JarvisApp.kt",
@@ -166,72 +157,73 @@ jobs:
           p = Path("app/src/main/java/com/example/jarvis/voice/VoiceSettings.kt")
           s = p.read_text()
           if "fun setSystemFallbackAllowed(allowed: Boolean)" not in s:
-              needle = "    fun getTuning(): VoiceTuning = tuning\n"
+              needle = "    fun getTuning(): VoiceTuning = tuning"
               if needle not in s:
                   raise SystemExit("Voice controller insertion point not found")
               s = s.replace(
                   needle,
-                  "    fun setSystemFallbackAllowed(allowed: Boolean) {\n        output.setSystemFallbackAllowed(allowed)\n    }\n\n" + needle,
+                  "    fun setSystemFallbackAllowed(allowed: Boolean) {" + chr(10) +
+                  "        output.setSystemFallbackAllowed(allowed)" + chr(10) +
+                  "    }" + chr(10) + chr(10) + needle,
                   1,
               )
               p.write_text(s)
 
-          add_import(
-              "app/src/main/java/com/example/jarvis/MainActivity.kt",
-              "import kotlinx.coroutines.launch",
-              "import java.util.Locale",
-          )
-
           p = Path("app/src/main/java/com/example/jarvis/MainActivity.kt")
           s = p.read_text()
-          file_optin = "@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)\\n"
-          if not s.startswith("@file:OptIn("):
-              s = file_optin + s
-          p.write_text(s)
-          replace_once(
-              "app/src/main/java/com/example/jarvis/MainActivity.kt",
+          if "@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)" not in s:
+              s = "@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)" + chr(10) + s
+          if "import kotlinx.coroutines.launch" not in s:
+              s = s.replace("import java.util.Locale", "import kotlinx.coroutines.launch" + chr(10) + "import java.util.Locale", 1)
+          s = s.replace(
               "onOpenAccessibility = { startActivitySafely(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },",
               "onOpenAccessibility = { app.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) },",
-              "accessibility opener",
+              1,
           )
-
-          add_import(
-              "app/src/main/java/com/example/jarvis/agent/JarvisEngine.kt",
-              "import kotlinx.coroutines.launch",
-              "import com.example.jarvis.security.MemorySafetyPolicy",
-          )
-
-          add_import(
-              "app/src/main/java/com/example/jarvis/task/TaskManager.kt",
-              "import kotlinx.coroutines.sync.Mutex",
-              "import kotlinx.coroutines.channels.Channel",
-          )
-          add_import(
-              "app/src/main/java/com/example/jarvis/task/TaskManager.kt",
-              "import kotlinx.coroutines.sync.withLock",
-              "import kotlinx.coroutines.sync.Mutex",
-          )
-          PY
-
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("app/build.gradle.kts")
-          s = p.read_text()
-          if 'dev.rikka.shizuku:api:12.2.0' not in s:
-              anchor = 'implementation("com.squareup.okhttp3:okhttp:5.3.0")'
-              if anchor not in s:
-                  raise SystemExit("OkHttp dependency anchor missing")
-              s = s.replace(anchor, anchor + '\n    implementation("dev.rikka.shizuku:api:13.1.5")
-    implementation("dev.rikka.shizuku:provider:13.1.5")', 1)
           p.write_text(s)
+
+          p = Path("app/src/main/java/com/example/jarvis/agent/JarvisEngine.kt")
+          s = p.read_text()
+          if "import kotlinx.coroutines.launch" not in s:
+              s = s.replace(
+                  "import com.example.jarvis.security.MemorySafetyPolicy",
+                  "import com.example.jarvis.security.MemorySafetyPolicy" + chr(10) + "import kotlinx.coroutines.launch",
+                  1,
+              )
+              p.write_text(s)
+
+          p = Path("app/src/main/java/com/example/jarvis/task/TaskManager.kt")
+          s = p.read_text()
+          if "import kotlinx.coroutines.sync.Mutex" not in s:
+              s = s.replace(
+                  "import kotlinx.coroutines.channels.Channel",
+                  "import kotlinx.coroutines.channels.Channel" + chr(10) + "import kotlinx.coroutines.sync.Mutex" + chr(10) + "import kotlinx.coroutines.sync.withLock",
+                  1,
+              )
+              p.write_text(s)
+
+          p = Path("app/build.gradle.kts")
+          lines = p.read_text().splitlines()
+          lines = [line for line in lines if "dev.rikka.shizuku:api:" not in line and "dev.rikka.shizuku:provider:" not in line]
+          anchor = 'implementation("com.squareup.okhttp3:okhttp:5.3.0")'
+          try:
+              i = next(i for i, line in enumerate(lines) if anchor in line)
+          except StopIteration:
+              raise SystemExit("OkHttp dependency anchor not found")
+          lines[i + 1:i + 1] = [
+              '    implementation("dev.rikka.shizuku:api:13.1.5")',
+              '    implementation("dev.rikka.shizuku:provider:13.1.5")',
+          ]
+          p.write_text(chr(10).join(lines) + chr(10))
           PY
 
           grep -q 'VoicePreferences' app/src/main/java/com/example/jarvis/JarvisApp.kt
-          grep -q 'setSystemFallbackAllowed' app/src/main/java/com/example/jarvis/voice/VoiceSettings.kt
-          grep -q 'kotlinx.coroutines.launch' app/src/main/java/com/example/jarvis/MainActivity.kt
-          grep -q 'kotlinx.coroutines.launch' app/src/main/java/com/example/jarvis/agent/JarvisEngine.kt
-          grep -q 'kotlinx.coroutines.sync.Mutex' app/src/main/java/com/example/jarvis/task/TaskManager.kt
+          grep -q 'fun setSystemFallbackAllowed' app/src/main/java/com/example/jarvis/voice/VoiceSettings.kt
+          grep -q 'import kotlinx.coroutines.launch' app/src/main/java/com/example/jarvis/MainActivity.kt
+          grep -q 'import kotlinx.coroutines.launch' app/src/main/java/com/example/jarvis/agent/JarvisEngine.kt
+          grep -q 'import kotlinx.coroutines.sync.Mutex' app/src/main/java/com/example/jarvis/task/TaskManager.kt
           grep -q 'dev.rikka.shizuku:api:13.1.5' app/build.gradle.kts
+          grep -q 'dev.rikka.shizuku:provider:13.1.5' app/build.gradle.kts
 
       - name: Pin AndroidX compatibility set
         working-directory: build-src/jarvis-android
