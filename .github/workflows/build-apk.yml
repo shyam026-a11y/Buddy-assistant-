@@ -320,6 +320,73 @@ jobs:
           grep -q 'MODEL_BASE_URL' app/build.gradle.kts
           grep -q 'MODEL_NAME' app/build.gradle.kts
           grep -q 'glm-5.2' app/build.gradle.kts
+      - name: Decouple Shizuku compile-time API
+        working-directory: build-src/jarvis-android
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("app/src/main/java/com/example/jarvis/android/ShizukuBackend.kt")
+          p.write_text(r'''package com.example.jarvis.android
+
+import android.content.Context
+import android.content.pm.PackageManager
+
+class ShizukuBackend(private val context: Context) : ControlBackend {
+    override val name = "shizuku"
+
+    private val shizukuClass: Class<*>? by lazy {
+        runCatching { Class.forName("rikka.shizuku.Shizuku") }.getOrNull()
+    }
+
+    override fun available(): Boolean {
+        val clazz = shizukuClass ?: return false
+        return runCatching {
+            val ping = clazz.getMethod("pingBinder").invoke(null) as Boolean
+            val permission = clazz.getMethod("checkSelfPermission").invoke(null) as Int
+            ping && permission == PackageManager.PERMISSION_GRANTED
+        }.getOrDefault(false)
+    }
+
+    override suspend fun openApp(packageName: String): Result<Unit> = runCatching {
+        val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+            ?: error("No launcher activity")
+        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+    }
+
+    override suspend fun tap(x: Int, y: Int): Result<Unit> =
+        runCatching { exec("input", "tap", x.toString(), y.toString()) }
+
+    override suspend fun typeText(text: String): Result<Unit> =
+        runCatching { exec("input", "text", text.replace(" ", "%s")) }
+
+    override suspend fun back(): Result<Unit> =
+        runCatching { exec("input", "keyevent", "4") }
+
+    override suspend fun screenText(): Result<String> =
+        runCatching { exec("dumpsys", "window", "windows") }
+
+    private fun exec(vararg cmd: String): String {
+        check(available()) { "Shizuku unavailable or unauthorized" }
+        val clazz = shizukuClass ?: error("Shizuku unavailable")
+        val method = clazz.getMethod(
+            "newProcess",
+            Array<String>::class.java,
+            Array<String>::class.java,
+            String::class.java,
+        )
+        val process = method.invoke(null, cmd.toTypedArray(), null, null) as Process
+        val out = process.inputStream.bufferedReader().readText()
+        val err = process.errorStream.bufferedReader().readText()
+        check(process.waitFor() == 0) { err.take(500) }
+        return out
+    }
+}
+''', encoding="utf-8")
+          PY
+          ! grep -q 'import dev.rikka.shizuku.Shizuku' app/src/main/java/com/example/jarvis/android/ShizukuBackend.kt
       - name: Test
         working-directory: build-src/jarvis-android
         run: gradle :app:testDebugUnitTest --no-daemon --stacktrace
