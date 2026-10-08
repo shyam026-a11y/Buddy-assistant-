@@ -1,0 +1,1 @@
+Trigger Jarvis APK after configuring compileSdk for standalone Shizuku modules.
