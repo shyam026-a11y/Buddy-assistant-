@@ -28,8 +28,11 @@ jobs:
           from pathlib import Path
           import base64, gzip, hashlib, tarfile
           encoded = "".join(Path(".jarvis-source/jarvis-source-2.0.0.tar.gz.b64").read_text(encoding="ascii").split())
-          if not encoded or len(encoded) % 4 != 0:
-              raise SystemExit(f"invalid Base64 length: {len(encoded)}")
+          encoded = encoded.rstrip("=")
+          if not encoded or len(encoded) % 4 == 1:
+              raise SystemExit(f"invalid Base64 data length: {len(encoded)}")
+          padding = "=" * ((4 - len(encoded) % 4) % 4)
+          encoded += padding
           raw = base64.b64decode(encoded, validate=True)
           if raw[:2] != b"\x1f\x8b":
               raise SystemExit("source bundle is not gzip")
