@@ -1,0 +1,1 @@
+Trigger canonical Jarvis APK after final Kotlin compile fixes.
