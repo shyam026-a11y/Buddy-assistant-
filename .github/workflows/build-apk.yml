@@ -30,6 +30,7 @@ jobs:
 
       - name: Android SDK
         run: |
+          set -euo pipefail
           SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           if [ ! -x "$SDKMANAGER" ]; then
             SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager -type f -print -quit)"
@@ -47,17 +48,27 @@ jobs:
           set -euo pipefail
           rm -rf /tmp/jarvis-src
           mkdir -p /tmp/jarvis-src
-          cat .jarvis-source/pkg/q01.b64 .jarvis-source/pkg/q02.b64 .jarvis-source/pkg/q03.b64 .jarvis-source/pkg/q04.b64 .jarvis-source/pkg/q05.b64 .jarvis-source/pkg/q06.b64 .jarvis-source/pkg/q07.b64 .jarvis-source/pkg/q08.b64 .jarvis-source/pkg/q09.b64 .jarvis-source/pkg/q10.b64 .jarvis-source/pkg/q11.b64 .jarvis-source/pkg/q12.b64 .jarvis-source/pkg/q13.b64 .jarvis-source/pkg/q14.b64 .jarvis-source/pkg/q15.b64 .jarvis-source/pkg/q16.b64 > /tmp/jarvis-src.b64
-          base64 -d /tmp/jarvis-src.b64 > /tmp/jarvis-src.tar.gz
-          tar -xzf /tmp/jarvis-src.tar.gz -C /tmp/jarvis-src
+          for part in .jarvis-source/pkg/q*.b64; do
+            base64 -d "$part" >> /tmp/jarvis-src.bin
+          done
+          mkdir -p /tmp/jarvis-src
+          tar -xzf /tmp/jarvis-src.bin -C /tmp/jarvis-src
           test -f /tmp/jarvis-src/jarvis-android/app/build.gradle.kts
 
       - name: Set GLM-5.2 defaults
         run: |
           set -euo pipefail
           cd /tmp/jarvis-src/jarvis-android
-          sed -i 's#buildConfigField("String", "MODEL_BASE_URL", "\""\"")#buildConfigField("String", "MODEL_BASE_URL", "\"https://api.z.ai/api/paas/v4/chat/completions\"")#' app/build.gradle.kts || true
-          sed -i 's#buildConfigField("String", "MODEL_NAME", "\""\"")#buildConfigField("String", "MODEL_NAME", "\"glm-5.2\"")#' app/build.gradle.kts || true
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("app/build.gradle.kts")
+          s=p.read_text()
+          s=s.replace('buildConfigField("String", "MODEL_BASE_URL", "\"\")',
+                      'buildConfigField("String", "MODEL_BASE_URL", "\"https://api.z.ai/api/paas/v4/chat/completions\"")')
+          s=s.replace('buildConfigField("String", "MODEL_NAME", "\"\")',
+                      'buildConfigField("String", "MODEL_NAME", "\"glm-5.2\"")')
+          p.write_text(s)
+          PY
           grep -q "glm-5.2" app/build.gradle.kts
 
       - name: Test
@@ -78,9 +89,11 @@ jobs:
           mkdir -p artifacts
           cp /tmp/jarvis-src/jarvis-android/app/build/outputs/apk/debug/*.apk artifacts/jarvis-debug.apk
           sha256sum artifacts/jarvis-debug.apk > artifacts/SHA256SUMS.txt
+          printf 'model=glm-5.2\nsource=jarvis-2.0.0-apk-build\n' > artifacts/BUILD_INFO.txt
 
       - uses: actions/upload-artifact@v4
         with:
           name: jarvis-glm-5.2-apk
           path: artifacts
           if-no-files-found: error
+          retention-days: 90
