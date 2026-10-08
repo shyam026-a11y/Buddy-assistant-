@@ -1,0 +1,1 @@
+Trigger APK build after replacing gzip CRC handling with raw-deflate validation.

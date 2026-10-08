@@ -1,0 +1,141 @@
+name: Jarvis GLM-5.2 APK
+
+on:
+  push:
+    branches: [jarvis-2.0.0-release]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout release branch
+        uses: actions/checkout@v4
+
+      - name: Reconstruct release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin jarvis-2.0.0-release
+          mkdir -p .jarvis-clean
+          git show origin/jarvis-2.0.0-release:.jarvis-clean/p01.b64 > .jarvis-clean/p01.b64
+          git show origin/jarvis-2.0.0-release:.jarvis-clean/p02.b64 > .jarvis-clean/p02.b64
+          git show origin/jarvis-2.0.0-release:.jarvis-clean/p03.b64 > .jarvis-clean/p03.b64
+          git show origin/jarvis-2.0.0-release:.jarvis-clean/p04.b64 > .jarvis-clean/p04.b64
+          git show origin/jarvis-2.0.0-release:.jarvis-clean/p05.b64 > .jarvis-clean/p05.b64
+          cat .jarvis-clean/p01.b64 .jarvis-clean/p02.b64 .jarvis-clean/p03.b64 .jarvis-clean/p04.b64 .jarvis-clean/p05.b64 | tr -d '[:space:]' > jarvis-source.b64
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, gzip, tarfile
+          s = Path("jarvis-source.b64").read_text().strip().rstrip("=")
+          s += "=" * ((4 - len(s) % 4) % 4)
+          raw = base64.b64decode(s, validate=True)
+          tar = gzip.decompress(raw)
+          Path("jarvis-source.tar").write_bytes(tar)
+          with tarfile.open("jarvis-source.tar", "r:") as tf:
+              names = set(tf.getnames())
+          req = {"jarvis-android/app/build.gradle.kts", "jarvis-android/app/src/main/java/com/example/jarvis/JarvisApp.kt"}
+          assert req <= names, sorted(req - names)
+          print("Jarvis clean source: PASS")
+          PY
+          rm -rf build-src
+          mkdir -p build-src
+          tar -xf jarvis-source.tar -C build-src
+          test -f build-src/jarvis-android/app/build.gradle.kts
+          test -f build-src/jarvis-android/app/src/main/java/com/example/jarvis/JarvisApp.kt
+      - name: Enable GLM-5.2 defaults
+        working-directory: build-src/jarvis-android
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("app/build.gradle.kts")
+          s = p.read_text()
+          s = s.replace(
+              'buildConfigField("String", "MODEL_BASE_URL", "\"\")',
+              'buildConfigField("String", "MODEL_BASE_URL", "\"https://api.z.ai/api/paas/v4/chat/completions\"")'
+          )
+          s = s.replace(
+              'buildConfigField("String", "MODEL_NAME", "\"\")',
+              'buildConfigField("String", "MODEL_NAME", "\"glm-5.2\"")'
+          )
+          p.write_text(s)
+
+          p = Path("app/src/main/java/com/example/jarvis/MainActivity.kt")
+          s = p.read_text()
+          marker = '''                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("API key (optional)") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                )
+'''
+          addition = marker + '''                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = {
+                        endpoint = "https://api.z.ai/api/paas/v4/chat/completions"
+                        model = "glm-5.2"
+                    }) {
+                        Text("Use GLM-5.2")
+                    }
+                }
+                Text(
+                    "GLM-5.2 runs on a hosted service or separate inference server. The phone keeps the control and security layers local.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+'''
+          if 'Text("Use GLM-5.2")' not in s:
+              if marker not in s:
+                  raise SystemExit("GLM settings insertion point not found")
+              s = s.replace(marker, addition, 1)
+          p.write_text(s)
+          PY
+          grep -q 'glm-5.2' app/build.gradle.kts
+          grep -q 'Use GLM-5.2' app/src/main/java/com/example/jarvis/MainActivity.kt
+          echo "GLM-5.2 wiring: PASS"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build and test
+        working-directory: build-src/jarvis-android
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/*.sh 2>/dev/null || true
+          gradle :app:testDebugUnitTest :app:lintRelease :app:assembleDebug :app:assembleRelease --no-daemon
+
+      - name: Collect APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          find build-src/jarvis-android/app/build/outputs -type f -name '*.apk' -print -exec cp {} artifacts/ \;
+          test -n "$(find artifacts -type f -name '*.apk' -print -quit)"
+          sha256sum artifacts/*.apk > artifacts/SHA256SUMS.txt
+          ls -lh artifacts/
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-glm-5.2-apks
+          path: artifacts/
