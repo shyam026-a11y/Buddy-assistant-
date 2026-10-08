@@ -1,0 +1,101 @@
+name: Jarvis GLM-5.2 APK
+
+# Clean debug APK build for the current release branch.
+
+on:
+  push:
+    branches: [jarvis-2.0.0-release]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout release branch
+        uses: actions/checkout@v4
+
+      - name: Reconstruct release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d .jarvis-source/pkg
+          shopt -s nullglob
+          chunks=(.jarvis-source/pkg/q*.b64)
+          test "${#chunks[@]}" -eq 16
+          cat "${chunks[@]}" > jarvis-source.b64
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, gzip
+          encoded = Path("jarvis-source.b64").read_text(encoding="ascii").encode("ascii")
+          raw = base64.b64decode(encoded + b"===", validate=False)
+          # gzip.decompress validates the stream and CRC before returning.
+          gzip.decompress(raw)
+          Path("jarvis-source.tar.gz").write_bytes(raw)
+          PY
+          tar -tzf jarvis-source.tar.gz >/dev/null
+          rm -rf build-src
+          mkdir -p build-src
+          tar -xzf jarvis-source.tar.gz -C build-src
+          test -f build-src/jarvis-android/app/build.gradle.kts
+          test -f build-src/jarvis-android/app/src/main/java/com/example/jarvis/JarvisApp.kt
+          echo "Source reconstruction: PASS"
+
+      - name: Enable GLM-5.2 defaults
+        working-directory: build-src/jarvis-android
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("app/build.gradle.kts")
+          s = p.read_text()
+          s = s.replace(
+              'buildConfigField("String", "MODEL_BASE_URL", "\"\")',
+              'buildConfigField("String", "MODEL_BASE_URL", "\"https://api.z.ai/api/paas/v4/chat/completions\"")'
+          )
+          s = s.replace(
+              'buildConfigField("String", "MODEL_NAME", "\"\")',
+              'buildConfigField("String", "MODEL_NAME", "\"glm-5.2\"")'
+          )
+          p.write_text(s)
+          PY
+          grep -q 'glm-5.2' app/build.gradle.kts
+          echo "GLM-5.2 wiring: PASS"
+
+      - name: Toolchain diagnostics
+        working-directory: build-src/jarvis-android
+        shell: bash
+        run: |
+          set -euxo pipefail
+          java -version
+          gradle --version
+
+      - name: Unit tests and debug APK
+        working-directory: build-src/jarvis-android
+        shell: bash
+        run: |
+          set -euxo pipefail
+          chmod +x scripts/*.sh 2>/dev/null || true
+          gradle :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Collect debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          find build-src/jarvis-android/app/build/outputs -type f -name '*debug*.apk' -print -exec cp {} artifacts/jarvis-debug.apk \;
+          test -f artifacts/jarvis-debug.apk
+          sha256sum artifacts/jarvis-debug.apk > artifacts/SHA256SUMS.txt
+          ls -lh artifacts/
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-glm-5.2-debug-apk
+          path: artifacts/
