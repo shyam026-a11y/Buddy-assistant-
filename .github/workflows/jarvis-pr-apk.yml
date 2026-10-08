@@ -24,22 +24,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -d .jarvis-source/clean
+          test -d .jarvis-source/xzparts
           shopt -s nullglob
-          parts=(.jarvis-source/clean/p*.b64)
-          test "${#parts[@]}" -eq 5
-          cat "${parts[@]}" > jarvis-clean.b64
+          parts=(.jarvis-source/xzparts/c*.b64)
+          test "${#parts[@]}" -eq 49
+          cat "${parts[@]}" > jarvis-app.tar.xz.b64
           python3 - <<'PY'
           from pathlib import Path
-          import base64, gzip, hashlib, tarfile
-          encoded = "".join(Path("jarvis-clean.b64").read_text(encoding="ascii").split()).rstrip("=")
+          import base64, hashlib, lzma, tarfile
+          encoded = "".join(Path("jarvis-app.tar.xz.b64").read_text(encoding="ascii").split())
+          encoded = encoded.rstrip("=")
           encoded += "=" * ((4 - len(encoded) % 4) % 4)
           raw = base64.b64decode(encoded, validate=True)
-          print("clean_payload_bytes=", len(raw))
-          print("clean_payload_sha256=", hashlib.sha256(raw).hexdigest())
-          if raw[:2] != b"\x1f\x8b":
-              raise SystemExit("clean Jarvis payload is not gzip")
-          tar_bytes = gzip.decompress(raw)
+          print("xz_bytes=", len(raw))
+          print("xz_sha256=", hashlib.sha256(raw).hexdigest())
+          if raw[:6] != b"\xfd7zXZ\x00":
+              raise SystemExit("Jarvis source is not XZ")
+          try:
+              tar_bytes = lzma.decompress(raw)
+          except lzma.LZMAError as exc:
+              raise SystemExit(f"Jarvis XZ decompression failed: {exc}")
           Path("jarvis-source.tar").write_bytes(tar_bytes)
           with tarfile.open("jarvis-source.tar", "r:") as tf:
               names = set(tf.getnames())
@@ -50,8 +54,8 @@ jobs:
           }
           missing = sorted(required - names)
           if missing:
-              raise SystemExit("clean Jarvis payload missing: " + ", ".join(missing))
-          print("Clean Jarvis source integrity: PASS")
+              raise SystemExit("Jarvis source missing: " + ", ".join(missing))
+          print("Jarvis XZ source integrity: PASS")
           PY
           rm -rf build-src
           mkdir -p build-src
