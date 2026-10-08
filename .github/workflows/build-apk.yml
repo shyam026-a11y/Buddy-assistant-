@@ -133,29 +133,36 @@ jobs:
           grep -q 'kokoro-android-0.1.0.aar' app/build.gradle.kts
           grep -q 'onnxruntime-android:1.20.0' app/build.gradle.kts
 
+      - name: Add pinned Shizuku source modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/shizuku-api
+          git init -q /tmp/shizuku-api
+          git -C /tmp/shizuku-api remote add origin https://github.com/RikkaApps/Shizuku-API.git
+          git -C /tmp/shizuku-api fetch --depth 1 origin a27f6e4151ba7b39965ca47edb2bf0aeed7102e5
+          git -C /tmp/shizuku-api checkout --detach FETCH_HEAD
+          cp -a /tmp/shizuku-api/aidl build-src/jarvis-android/aidl
+          cp -a /tmp/shizuku-api/shared build-src/jarvis-android/shared
+          cp -a /tmp/shizuku-api/api build-src/jarvis-android/api
+          cp -a /tmp/shizuku-api/provider build-src/jarvis-android/provider
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("build-src/jarvis-android/settings.gradle.kts")
+          s = p.read_text()
+          if 'include(":aidl", ":shared", ":api", ":provider")' not in s:
+              s += '\ninclude(":aidl", ":shared", ":api", ":provider")\n'
+          p.write_text(s)
+          PY
+          test -f build-src/jarvis-android/api/src/main/java/rikka/shizuku/Shizuku.java
+          test -f build-src/jarvis-android/provider/src/main/java/rikka/shizuku/ShizukuProvider.java
+          test -f build-src/jarvis-android/aidl/src/main/aidl/moe/shizuku/server/IShizukuService.aidl
+
       - name: Patch Jarvis compile surface
         working-directory: build-src/jarvis-android
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p app/libs
-          base=https://repo1.maven.org/maven2/dev/rikka/shizuku
-          for pair in api/13.1.5/api-13.1.5.aar shared/13.1.5/shared-13.1.5.aar aidl/13.1.5/aidl-13.1.5.aar provider/13.1.5/provider-13.1.5.aar; do
-            rel="${pair##*/}"
-            curl --fail --location --retry 3 --retry-all-errors --silent --show-error "$base/$pair" --output "app/libs/$rel"
-          done
-          test -s app/libs/api-13.1.5.aar
-          test -s app/libs/shared-13.1.5.aar
-          test -s app/libs/aidl-13.1.5.aar
-          test -s app/libs/provider-13.1.5.aar
-          unzip -p app/libs/api-13.1.5.aar classes.jar > app/libs/shizuku-api-13.1.5.jar
-          unzip -p app/libs/shared-13.1.5.aar classes.jar > app/libs/shizuku-shared-13.1.5.jar
-          unzip -p app/libs/aidl-13.1.5.aar classes.jar > app/libs/shizuku-aidl-13.1.5.jar
-          test -s app/libs/shizuku-api-13.1.5.jar
-          test -s app/libs/shizuku-shared-13.1.5.jar
-          test -s app/libs/shizuku-aidl-13.1.5.jar
-          unzip -l app/libs/shizuku-api-13.1.5.jar | grep -q 'rikka/shizuku/Shizuku.class'
-
           python3 - <<'PY'
           from pathlib import Path
 
@@ -168,25 +175,31 @@ jobs:
 
           p = Path("app/src/main/java/com/example/jarvis/JarvisApp.kt")
           s = p.read_text()
-          add = "import com.example.jarvis.voice.VoicePreferences"
-          if add not in s:
-              s = s.replace("import com.example.jarvis.voice.AndroidPcmCapture", add + chr(10) + "import com.example.jarvis.voice.AndroidPcmCapture", 1)
+          if "import com.example.jarvis.voice.VoicePreferences" not in s:
+              s = s.replace("import com.example.jarvis.voice.AndroidPcmCapture", "import com.example.jarvis.voice.VoicePreferences" + chr(10) + "import com.example.jarvis.voice.AndroidPcmCapture", 1)
               p.write_text(s)
 
           p = Path("app/src/main/java/com/example/jarvis/voice/VoiceSettings.kt")
           s = p.read_text()
           if "fun setSystemFallbackAllowed(allowed: Boolean)" not in s:
               needle = "    fun getTuning(): VoiceTuning = tuning"
-              if needle in s:
-                  s = s.replace(needle, "    fun setSystemFallbackAllowed(allowed: Boolean) {" + chr(10) + "        output.setSystemFallbackAllowed(allowed)" + chr(10) + "    }" + chr(10) + chr(10) + needle, 1)
-                  p.write_text(s)
+              if needle not in s:
+                  raise SystemExit("Voice controller insertion point not found")
+              s = s.replace(
+                  needle,
+                  "    fun setSystemFallbackAllowed(allowed: Boolean) {" + chr(10) +
+                  "        output.setSystemFallbackAllowed(allowed)" + chr(10) +
+                  "    }" + chr(10) + chr(10) + needle,
+                  1,
+              )
+              p.write_text(s)
 
           p = Path("app/src/main/java/com/example/jarvis/MainActivity.kt")
           s = p.read_text()
           if "@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)" not in s:
               s = "@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)" + chr(10) + s
-          if "import kotlinx.coroutines.launch" not in s:
-              s = s.replace("import java.util.Locale", "import kotlinx.coroutines.launch" + chr(10) + "import java.util.Locale", 1)
+          add_import("app/src/main/java/com/example/jarvis/MainActivity.kt", "import kotlinx.coroutines.launch", "import java.util.Locale")
+          s = p.read_text()
           s = s.replace(
               "onOpenAccessibility = { startActivitySafely(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },",
               "onOpenAccessibility = { app.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) },",
@@ -194,36 +207,48 @@ jobs:
           )
           p.write_text(s)
 
-          p = Path("app/src/main/java/com/example/jarvis/agent/JarvisEngine.kt")
-          s = p.read_text()
-          if "import kotlinx.coroutines.launch" not in s:
-              s = s.replace("import com.example.jarvis.security.MemorySafetyPolicy", "import com.example.jarvis.security.MemorySafetyPolicy" + chr(10) + "import kotlinx.coroutines.launch", 1)
-              p.write_text(s)
-
-          p = Path("app/src/main/java/com/example/jarvis/task/TaskManager.kt")
-          s = p.read_text()
-          if "import kotlinx.coroutines.sync.Mutex" not in s:
-              s = s.replace("import kotlinx.coroutines.channels.Channel", "import kotlinx.coroutines.channels.Channel" + chr(10) + "import kotlinx.coroutines.sync.Mutex" + chr(10) + "import kotlinx.coroutines.sync.withLock", 1)
-              p.write_text(s)
+          add_import(
+              "app/src/main/java/com/example/jarvis/agent/JarvisEngine.kt",
+              "import kotlinx.coroutines.launch",
+              "import com.example.jarvis.security.MemorySafetyPolicy",
+          )
+          add_import(
+              "app/src/main/java/com/example/jarvis/task/TaskManager.kt",
+              "import kotlinx.coroutines.sync.Mutex",
+              "import kotlinx.coroutines.channels.Channel",
+          )
+          add_import(
+              "app/src/main/java/com/example/jarvis/task/TaskManager.kt",
+              "import kotlinx.coroutines.sync.withLock",
+              "import kotlinx.coroutines.sync.Mutex",
+          )
 
           p = Path("app/build.gradle.kts")
           lines = p.read_text().splitlines()
-          lines = [line for line in lines if "dev.rikka.shizuku:" not in line]
+          lines = [
+              line for line in lines
+              if "dev.rikka.shizuku:" not in line
+              and "shizuku-api-13.1.5.jar" not in line
+              and "shizuku-shared-13.1.5.jar" not in line
+              and "shizuku-aidl-13.1.5.jar" not in line
+              and "provider-13.1.5.aar" not in line
+              and "api-13.1.5.aar" not in line
+              and "shared-13.1.5.aar" not in line
+              and "aidl-13.1.5.aar" not in line
+          ]
           anchor = 'implementation("com.squareup.okhttp3:okhttp:5.3.0")'
           i = next((i for i, line in enumerate(lines) if anchor in line), None)
           if i is None:
               raise SystemExit("OkHttp dependency anchor not found")
           lines[i + 1:i + 1] = [
-              '    implementation(files("libs/shizuku-api-13.1.5.jar"))',
-              '    implementation(files("libs/shizuku-shared-13.1.5.jar"))',
-              '    implementation(files("libs/shizuku-aidl-13.1.5.jar"))',
-              '    implementation(files("libs/provider-13.1.5.aar"))',
+              '    implementation(project(":api"))',
+              '    implementation(project(":provider"))',
           ]
           p.write_text(chr(10).join(lines) + chr(10))
           PY
 
-          grep -q 'shizuku-api-13.1.5.jar' app/build.gradle.kts
-          grep -q 'provider-13.1.5.aar' app/build.gradle.kts
+          grep -q 'implementation(project(":api"))' app/build.gradle.kts
+          grep -q 'implementation(project(":provider"))' app/build.gradle.kts
           grep -q 'fun setSystemFallbackAllowed' app/src/main/java/com/example/jarvis/voice/VoiceSettings.kt
           grep -q 'import kotlinx.coroutines.launch' app/src/main/java/com/example/jarvis/MainActivity.kt
           grep -q 'import kotlinx.coroutines.sync.Mutex' app/src/main/java/com/example/jarvis/task/TaskManager.kt
