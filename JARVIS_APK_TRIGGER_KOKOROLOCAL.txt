@@ -1,0 +1,1 @@
+Trigger Jarvis APK with locally built pinned Kokoro AAR.
