@@ -1,9 +1,9 @@
-name: Buddy Assistant APK
+name: Buddy Direct APK (fallback)
 
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [jarvis-2.0.0-release]
 
 env:
   ANDROID_HOME: /usr/local/lib/android/sdk
