@@ -375,7 +375,7 @@ jobs:
                       Array<String>::class.java,
                       String::class.java,
                   )
-                  val process = method.invoke(null, cmd.toTypedArray(), null, null) as Process
+                  val process = method.invoke(null, cmd, null, null) as Process
                   val out = process.inputStream.bufferedReader().readText()
                   val err = process.errorStream.bufferedReader().readText()
                   check(process.waitFor() == 0) { err.take(500) }
@@ -384,6 +384,15 @@ jobs:
           }
           EOF
           ! grep -q 'import dev.rikka.shizuku.Shizuku' app/src/main/java/com/example/jarvis/android/ShizukuBackend.kt
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("app/src/main/java/com/example/jarvis/MainActivity.kt")
+          s = p.read_text()
+          opt = "@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)"
+          if opt not in s:
+              p.write_text(opt + "\n" + s)
+          PY
+          grep -q 'androidx.compose.material3.ExperimentalMaterial3Api' app/src/main/java/com/example/jarvis/MainActivity.kt
           test -s app/src/main/java/com/example/jarvis/android/ShizukuBackend.kt
       - name: Test
         working-directory: build-src/jarvis-android
