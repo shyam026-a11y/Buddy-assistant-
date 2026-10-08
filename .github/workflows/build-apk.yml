@@ -46,12 +46,11 @@ jobs:
       - name: Reconstruct Jarvis project
         run: |
           set -euo pipefail
-          rm -rf /tmp/jarvis-src
+          rm -rf /tmp/jarvis-src /tmp/jarvis-src.bin
           mkdir -p /tmp/jarvis-src
-          for part in .jarvis-source/pkg/q*.b64; do
-            base64 -d "$part" >> /tmp/jarvis-src.bin
-          done
-          mkdir -p /tmp/jarvis-src
+          cat .jarvis-source/pkg/q01.b64 .jarvis-source/pkg/q02.b64 .jarvis-source/pkg/q03.b64 .jarvis-source/pkg/q04.b64 .jarvis-source/pkg/q05.b64 .jarvis-source/pkg/q06.b64 .jarvis-source/pkg/q07.b64 .jarvis-source/pkg/q08.b64 .jarvis-source/pkg/q09.b64 .jarvis-source/pkg/q10.b64 .jarvis-source/pkg/q11.b64 .jarvis-source/pkg/q12.b64 .jarvis-source/pkg/q13.b64 .jarvis-source/pkg/q14.b64 .jarvis-source/pkg/q15.b64 .jarvis-source/pkg/q16.b64 | tr -d '=[:space:]' | base64 -d > /tmp/jarvis-src.bin
+          gzip -t /tmp/jarvis-src.bin
+          tar -tzf /tmp/jarvis-src.bin >/dev/null
           tar -xzf /tmp/jarvis-src.bin -C /tmp/jarvis-src
           test -f /tmp/jarvis-src/jarvis-android/app/build.gradle.kts
 
