@@ -1,0 +1,1 @@
+Trigger Jarvis APK after fixing the verified archive extraction root.
