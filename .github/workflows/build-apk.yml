@@ -175,6 +175,19 @@ jobs:
           test -f build-src/jarvis-android/api/src/main/java/rikka/shizuku/Shizuku.java
           test -f build-src/jarvis-android/provider/src/main/java/rikka/shizuku/ShizukuProvider.java
           test -f build-src/jarvis-android/aidl/src/main/aidl/moe/shizuku/server/IShizukuService.aidl
+          python3 - <<'PY'
+          from pathlib import Path
+          for module in ("aidl", "shared", "api", "provider"):
+              p = Path("build-src/jarvis-android") / module / "build.gradle"
+              s = p.read_text()
+              if "compileSdk" not in s:
+                  s = s.replace("android {", "android {\n    compileSdk 36", 1)
+                  p.write_text(s)
+          PY
+          grep -q 'compileSdk 36' build-src/jarvis-android/aidl/build.gradle
+          grep -q 'compileSdk 36' build-src/jarvis-android/shared/build.gradle
+          grep -q 'compileSdk 36' build-src/jarvis-android/api/build.gradle
+          grep -q 'compileSdk 36' build-src/jarvis-android/provider/build.gradle
 
       - name: Patch Jarvis compile surface
         working-directory: build-src/jarvis-android
