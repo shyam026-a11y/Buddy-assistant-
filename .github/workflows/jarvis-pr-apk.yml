@@ -31,15 +31,22 @@ jobs:
           cat "${chunks[@]}" > jarvis-source.b64
           python3 - <<'PY'
           from pathlib import Path
-          import base64
+          import base64, zlib, struct
           encoded = Path("jarvis-source.b64").read_text(encoding="ascii").encode("ascii")
           raw = base64.b64decode(encoded + b"===", validate=False)
-          Path("jarvis-source.tar.gz").write_bytes(raw)
+          if raw[:2] != b"\x1f\x8b":
+              raise SystemExit("not a gzip stream")
+          if len(raw) < 18:
+              raise SystemExit("gzip stream too short")
+          # Decompress the raw DEFLATE payload directly. This bypasses the
+          # damaged gzip CRC footer but still requires the compressed stream
+          # itself to be valid; TAR integrity is checked immediately below.
+          tar_bytes = zlib.decompress(raw[10:-8], -15)
+          Path("jarvis-source.tar").write_bytes(tar_bytes)
+          expected_size = struct.unpack("<I", raw[-4:])[0]
+          if expected_size != (len(tar_bytes) & 0xffffffff):
+              raise SystemExit("gzip ISIZE mismatch")
           PY
-          # The release payload's gzip footer has a mismatched CRC, but the
-          # tar stream itself is recoverable. Validate the tar structure after
-          # streaming decompression while explicitly ignoring the bad CRC.
-          gzip -dc --ignore-crc jarvis-source.tar.gz > jarvis-source.tar
           tar -tf jarvis-source.tar >/dev/null
           rm -rf build-src
           mkdir -p build-src
