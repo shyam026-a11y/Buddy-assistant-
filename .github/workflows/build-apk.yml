@@ -100,7 +100,7 @@ jobs:
               anchor = 'implementation("com.squareup.okhttp3:okhttp:5.3.0")'
               if anchor not in s:
                   raise SystemExit("OkHttp dependency anchor not found")
-              s = s.replace(anchor, anchor + '\\n    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")', 1)
+              s = s.replace(anchor, anchor + '\n    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")', 1)
           p.write_text(s)
           PY
           grep -q 'dev.ffmpegkit-maintained:kokoro-android:0.1.0' app/build.gradle.kts
